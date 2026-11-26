@@ -66,6 +66,32 @@ fn solve_writes_a_closed_mesh_and_reports_json() {
     assert_eq!(saved, result);
     let density: topopt_study::Density = serde_json::from_slice(&std::fs::read(out.join("beam.density.json")).unwrap()).unwrap();
     assert_eq!(density.values.len(), density.grid.nel());
+
+    // remesh: the same densities, other mesh settings, no optimization.
+    let mut coarse: serde_json::Value = serde_json::from_slice(&std::fs::read(&spec).unwrap()).unwrap();
+    coarse["mesh"] = serde_json::json!({"triangles": 1500, "smoother": "hc", "sharp_edges": true});
+    let coarse_spec = dir.join("beam-coarse.json");
+    std::fs::write(&coarse_spec, serde_json::to_vec(&coarse).unwrap()).unwrap();
+    let stl = dir.join("beam-coarse.stl");
+    let o = exe().arg("remesh").arg(&coarse_spec).arg("--density").arg(out.join("beam.density.json")).arg("--mesh").arg(&stl).output().unwrap();
+    assert_eq!(code(&o), 0, "{}", String::from_utf8_lossy(&o.stderr));
+    let report: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap();
+    // A target, not a cap: vertices on sharp edges are kept, so small budgets end a little above it.
+    assert!(report["triangles"].as_u64().unwrap() < 2500, "{report}");
+    let m = read_stl(&std::fs::read(&stl).unwrap(), 1.0).unwrap();
+    assert!(m.validate(true).ok());
+    // remesh with trimming: a report of what went, the stiffness within the budget.
+    let o = exe().arg("remesh").arg(&coarse_spec).arg("--density").arg(out.join("beam.density.json")).arg("--mesh").arg(&stl).args(["--trim", "1"]).output().unwrap();
+    assert_eq!(code(&o), 0, "{}", String::from_utf8_lossy(&o.stderr));
+    let report: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap();
+    let trim = &report["trim"];
+    assert!(trim["compliance_after"].as_f64().unwrap() <= trim["compliance_before"].as_f64().unwrap() * 1.01 + 1e-12, "{report}");
+    // Densities of another grid are refused.
+    coarse["settings"]["max_elements"] = serde_json::json!(20000);
+    std::fs::write(&coarse_spec, serde_json::to_vec(&coarse).unwrap()).unwrap();
+    let o = exe().arg("remesh").arg(&coarse_spec).arg("--density").arg(out.join("beam.density.json")).arg("--mesh").arg(&stl).output().unwrap();
+    assert_eq!(code(&o), 1);
+    assert!(String::from_utf8_lossy(&o.stderr).contains("another study"));
     let _ = std::fs::remove_dir_all(&dir);
 }
 

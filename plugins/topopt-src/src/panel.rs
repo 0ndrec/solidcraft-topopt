@@ -180,6 +180,12 @@ pub fn show(study: &Study, body: Option<&BodyInfo>, solver: &SolverView) -> Resu
     d.push(flag("/mesh/remove_islands".into(), ms.remove_islands));
     d.push(flag("/mesh/fill_cavities".into(), ms.fill_cavities));
     d.push(flag("/mesh/convert_solid".into(), ms.convert_solid));
+    let smoother = topopt_study::SMOOTHERS.iter().find(|x| x.0 == ms.smoother).map_or("Taubin", |x| x.1);
+    d.push(text("/mesh/smoother".into(), smoother));
+    d.push(flag("/mesh/preserve_volume".into(), ms.preserve_volume));
+    d.push(flag("/mesh/sharp_edges".into(), ms.sharp_edges));
+    d.push(number("/mesh/upsample".into(), ms.upsample as f64));
+    d.push(number("/mesh/trim_percent".into(), ms.trim_percent));
 
     let mut rows: Vec<(&str, String)> = Vec::new();
     let ready = solver.ready.as_ref().and_then(|f| f.result.clone());
@@ -192,6 +198,9 @@ pub fn show(study: &Study, body: Option<&BodyInfo>, solver: &SolverView) -> Resu
             rows.push(("Cells", format!("{} of {:.2} mm", fmt_n(r.elements as f64), r.h)));
             rows.push(("Mesh", format!("{} triangles", fmt_n(r.triangles as f64))));
             rows.push(("Holes through", r.genus.to_string()));
+            if r.trimmed > 0.0 {
+                rows.push(("Trimmed", format!("{:.1} % of the material", r.trimmed * 100.0)));
+            }
             rows.push(("File", format!("results/{}", r.stl)));
             rows.push(("In the design", if r.inserted { "yes".into() } else { "no: click Create body".into() }));
             for w in &r.warnings {

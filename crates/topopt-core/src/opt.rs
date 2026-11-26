@@ -251,6 +251,27 @@ impl Optimizer {
         Ok(stats)
     }
 
+    /// Analysis of the current physical densities `x_phys` (set them directly to analyse any
+    /// design): the weighted compliance and each element's strain energy, `E_e · u_eᵀ k u_e`
+    /// summed over load cases (relative units; compare elements with each other).
+    pub fn evaluate_energies(&mut self) -> Result<(f64, Vec<f64>), String> {
+        let nel = self.problem.grid.nel();
+        self.solve()?;
+        let emod = self.moduli(&self.x_phys);
+        let grid = self.problem.grid;
+        let mut compliance = 0.0;
+        let mut energy = vec![0.0; nel];
+        let mut ce = vec![0.0; nel];
+        for c in 0..self.forces.len() {
+            compliance += self.weights[c] * dot(&self.forces[c], &self.u[c]);
+            fem::element_energies(&grid, &self.ke, &self.u[c], &mut ce);
+            for e in 0..nel {
+                energy[e] += self.weights[c] * emod[e] * ce[e];
+            }
+        }
+        Ok((compliance, energy))
+    }
+
     /// Compliance and its gradients with respect to the design variables at the current design.
     pub fn evaluate(&mut self) -> Result<Evaluation, String> {
         let nel = self.problem.grid.nel();

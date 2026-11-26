@@ -71,6 +71,8 @@ and the summary to stdout ([§5.3](#53-summary-resultjson)). More specs are in [
 ```
 topopt-solver solve INPUT.json [options]   solve one study (a spec, or a TopOpt plugin job)
 topopt-solver check INPUT.json             build the problem only; print a JSON report
+topopt-solver remesh INPUT.json --density FILE --mesh FILE
+                                           mesh a run's densities again with INPUT's mesh settings
 topopt-solver example                      print an example spec
 topopt-solver watch [FOLDER] [--once]      serve the TopOpt plugin (its results folder)
 topopt-solver version
@@ -137,11 +139,32 @@ Explicit `--mesh`, `--density` and `--result` combine with `--out`: the explicit
 
 A broken study (a region that catches no node, no supports, an open domain…) gives exit code 2 and the reason on stderr, which makes `check` a cheap validation step in CI before a long run.
 
-### 3.3. `example`
+### 3.3. `remesh`
+
+```
+topopt-solver remesh INPUT.json --density RUN.density.json --mesh OUT.ply|stl [--trim PERCENT] [--threads N]
+```
+
+Makes the mesh again from the densities of an earlier `solve` of the same study, with the `mesh` settings of `INPUT` (triangles, smoother, upsampling, sharp edges…), without optimizing again: tune the mesh in seconds. The densities must come from the same domain and grid settings (the grid is checked). `--trim PERCENT` trims thin dead weight costing at most that much stiffness ([§4.10](#410-trimming-thin-dead-weight)), overriding `mesh.trim_percent`. A JSON report goes to stdout:
+
+```json
+{"triangles": 30000, "vertices": 14998, "volume_mm3": 80043.9, "genus": 31,
+ "pinned_vertices": 12879, "edge_vertices": 663, "corner_vertices": 6,
+ "sharp_edges": true, "smooth_iterations": 20,
+ "trim": {"candidates": 21, "removed_pieces": 6, "removed_elements": 26, "removed_fraction": 0.0029,
+          "compliance_before": 105.03, "compliance_after": 105.52},
+ "warnings": []}
+```
+
+`trim` is `null` without trimming.
+
+Exit codes as for `solve` (1 when the densities do not fit the input or the mesh cannot be made).
+
+### 3.4. `example`
 
 Prints a complete spec with every field at its default. It is the best template: delete any field to get its default.
 
-### 3.4. `watch`
+### 3.5. `watch`
 
 ```
 topopt-solver watch [FOLDER] [--once] [--threads N]
@@ -267,12 +290,19 @@ Elements are cubes. Grid dimensions are rounded up to multiples of 4 (of 2 when 
 | Field | Default | Meaning |
 |---|---|---|
 | `triangles` | 30 000 | Triangle budget after decimation |
-| `smoothing` | 10 | Taubin smoothing passes |
+| `upsample` | 2 | Sample the density field this many times finer (1…3, cubic interpolation) before making the surface: 2 gives round members instead of faceted ones, for about 8× the meshing work |
+| `smoothing` | 20 | Smoothing passes |
 | `keep_faces` | true | Vertices near the domain's surface are pulled onto it, so mounting faces stay exact |
 | `remove_islands` | true | Remove pieces not connected to a support or load |
 | `fill_cavities` | true | Fill closed internal voids (they cannot be manufactured, and CAD dislikes them) |
 | `iso` | 0.5 | Density threshold of the surface |
+| `smoother` | `"bilateral"` | `"bilateral"` (bilateral normal filtering: the most accurate surface, keeps creases), `"taubin"` (fastest) or `"hc"` (HC Laplacian, little shrinkage) |
+| `preserve_volume` | true | Offset the free surface along its normals so smoothing does not change the volume |
+| `sharp_edges` | true | With `keep_faces`: keep the domain's sharp edges and corners exactly (crease vertices inserted on them, corners fixed) |
+| `trim_percent` | 0 | Trim thin dead weight as long as the stiffness drops by at most this many percent; 0 = off ([§4.10](#410-trimming-thin-dead-weight)) |
 | `convert_solid` | true | Not used by specs (a plugin flag) |
+
+The surface is made from the **filtered** densities (before the Heaviside projection), sampled `upsample` times finer: the projected densities are nearly 0 or 1 per element, so a surface through them follows the voxels, while the filtered field varies smoothly and puts the same surface (the projection's threshold is the iso value) between the element centres. On the bridge of `examples/`, cross-sections of the struts became rounder (fit to an ellipse 0.956 → 0.984) and the surface smoother (mean angle between neighbouring triangles 15.7° → 10.4° at the same triangle count); meshing takes ~20 s instead of ~1 s natively.
 
 ### 4.9. Full example: a bracket from STL with a bolt clearance
 
@@ -296,6 +326,17 @@ Elements are cubes. Grid dimensions are rounded up to multiples of 4 (of 2 when 
 
 Two load cases: the part must carry the vertical and the side force, but not at the same time.
 
+### 4.10. Trimming thin dead weight
+
+Results often keep thin pieces that look useless: spikes, hooks and strands hanging from a member ("stalactites"). With `trim_percent` above 0 (or `remesh --trim`), after optimizing:
+1. the part is analysed as it will be made: the design thresholded at `iso`, solid or empty;
+2. candidates are its thin parts — what a morphological opening with a 3×3×3 cube removes (pieces up to about two elements thick) — grouped into connected pieces, never the pads under supports and loads;
+3. each piece, smallest first, is removed on trial and the compliance recomputed; it goes if it costs less than half the budget, and as long as all removals together stay within `trim_percent`. A piece whose removal leaves part of the structure floating is kept.
+
+The summary's `warnings` say what was trimmed (`trimmed 5 thin pieces (0.5 % of the material) for 0.78 % of the stiffness`) and `trimmed` gives the share of material.
+
+Expect little: such pieces mostly **do** carry load. On the cantilever of `examples/`, 14 thin pieces (0.9 % of the material) cost 1.4 % of the stiffness — more than their share of the mass. On the bridge, the "stalactites" under the deck are short ribs stiffening the thin loaded deck (a pad the optimizer cannot thicken): with a 6 mm pad instead they vanish, but the deck then takes most of the material and the bridge is 6.6× less stiff. Trimming is a cosmetic choice with a known price, so it is off by default.
+
 ## 5. Outputs
 
 ### 5.1. Mesh (`.ply` / `.stl`)
@@ -311,11 +352,12 @@ SolidCraft (`closed: true`, `mesh.convert` to a solid), trimesh (`is_watertight`
   "grid":   { "nx": 36, "ny": 12, "nz": 12, "h": 3.34, "origin": [x0, y0, z0] },
   "values": [ … ],   // element density 0…1, nx·ny·nz numbers
   "pads":   [ … ],   // true: the element was a solid pad
-  "inside": [ … ]    // true: inside the domain (false: outside it or in a keep_out)
+  "inside": [ … ],   // true: inside the domain (false: outside it or in a keep_out)
+  "filtered": [ … ]  // the filtered densities before projection (pads 1, outside 0): the mesh is made from these
 }
 ```
 
-Element order: index `i + nx·(j + ny·k)`; the element's centre is `origin + h·(i+0.5, j+0.5, k+0.5)`. The values are the physical densities after filtering and projection, i.e. what the analysis used. Re-mesh with other settings from this file (as the plugin's Re-mesh does), plot sections of it or hand the field to another tool.
+Element order: index `i + nx·(j + ny·k)`; the element's centre is `origin + h·(i+0.5, j+0.5, k+0.5)`. `values` are the physical densities after filtering and projection, i.e. what the analysis used; `filtered` (empty in files from older versions, which then mesh from `values`) is the smooth field the surface is made from. Trimmed pieces are 0 in both. Re-mesh with other settings from this file (as the plugin's Re-mesh does), plot sections of it or hand the field to another tool.
 
 ### 5.3. Summary (`result.json`)
 
@@ -350,7 +392,8 @@ Element order: index `i + nx·(j + ny·k)`; the element's centre is `origin + h�
 | `seconds` | Total time: voxelization, optimization, mesh |
 | `stl` | Where the mesh was written (a historical name: it may be PLY). Empty with `--no-files` |
 | `inserted` | Used by the plugin; always `false` here |
-| `warnings` | Open domain, too few elements across, time limit reached… **Show these to the pipeline's user** |
+| `trimmed` | Share of the material trimmed as dead weight (`mesh.trim_percent`), 0 when off |
+| `warnings` | Open domain, too few elements across, time limit reached, sharp edges that had to be rounded… **Show these to the pipeline's user** |
 
 ## 6. Progress, exit codes, cancelling
 
@@ -515,6 +558,7 @@ let summary = out.result;      // RunResult, as in result.json
 | `RunOutput` | `result: RunResult`, `mesh: Mesh`, `density: Density`, `files: Vec<PathBuf>` |
 | `Event` | `Started`, `Progress`, `Finished`, `Failed`; its `Serialize` is the `--progress json` format |
 | `prepare(&Input, on_event) -> Result<Job, String>` | Only build the job (voxelize a spec) |
+| `remesh(&Input, &Density) -> Result<(Mesh, RemeshReport), String>` | Mesh saved densities again with the input's mesh settings |
 | `check(&Input) -> Result<CheckReport, String>` | Build and report |
 | `mesh_bytes(&Mesh, path, comment)` | PLY or STL by extension |
 | `write_atomic(path, bytes)` | Write through a temporary file and a rename |

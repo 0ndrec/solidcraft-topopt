@@ -470,12 +470,15 @@ fn remesh() -> Result<Value, PluginError> {
     let surf = if study.mesh.keep_faces { surface(&body) } else { None };
     control::progress(0.3, "making the mesh");
     let surface_ref = surf.as_ref().map(|(p, t)| (p.as_slice(), t.as_slice()));
-    let (mesh, report) = topopt_study::make_mesh(&study, &density, surface_ref).map_err(|e| invalid("mesh", e))?;
+    let (mesh, full) = topopt_study::make_mesh(&study, &density, surface_ref).map_err(|e| invalid("mesh", e))?;
+    let report = &full.mesh;
     let path = mesh_path(&body);
     write_mesh(&path, &mesh)?;
     let mut result = study.result.clone().unwrap_or_default();
     result.stl = path;
     result.inserted = false;
+    result.warnings.retain(|w| !w.starts_with("the sharp edges"));
+    result.warnings.extend(topopt_study::mesh_warnings(&study, &full, surface_ref.is_some()));
     result.triangles = report.triangles;
     result.genus = report.genus;
     result.mesh_volume_mm3 = report.volume;

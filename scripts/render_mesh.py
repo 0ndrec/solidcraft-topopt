@@ -3,7 +3,10 @@ A small software rasterizer (numpy, z-buffer, smooth shading, 2× supersampling)
 plotting library needed.
 
     tools/reference/.venv/Scripts/python scripts/render_mesh.py MESH OUT.png [--size W H]
-        [--yaw DEG] [--pitch DEG] [--color RRGGBB] [--up z|y]
+        [--yaw DEG] [--pitch DEG] [--color RRGGBB] [--up z|y] [--compare MESH2]
+
+With --compare, MESH2 is rendered with the same camera and framing and put to the right of MESH
+(a before/after picture).
 """
 import argparse
 import struct
@@ -37,15 +40,19 @@ def rotation(yaw, pitch):
     return rx @ to_screen @ rz
 
 
-def render(mesh, width, height, yaw, pitch, color):
+def render(mesh, width, height, yaw, pitch, color, frame=None):
+    """`frame`: the vertices that set the framing (default: the mesh's own)."""
     ss = 2
     W, H = width * ss, height * ss
     v = np.asarray(mesh.vertices, dtype=np.float64)
     R = rotation(yaw, pitch)
     p = v @ R.T
-    p -= (p.min(0) + p.max(0)) / 2  # centre the projection, not the world box
+    f = (np.asarray(frame, dtype=np.float64) if frame is not None else v) @ R.T
+    centre = (f.min(0) + f.max(0)) / 2  # centre the projection, not the world box
+    p -= centre
+    f -= centre
     n = np.asarray(mesh.vertex_normals) @ R.T
-    span = max((p[:, 0].max() - p[:, 0].min()) / W, (p[:, 1].max() - p[:, 1].min()) / H) * 1.08
+    span = max((f[:, 0].max() - f[:, 0].min()) / W, (f[:, 1].max() - f[:, 1].min()) / H) * 1.08
     x = p[:, 0] / span + W / 2
     y = H / 2 - p[:, 1] / span
     z = p[:, 2]
@@ -124,11 +131,26 @@ def main():
     ap.add_argument("--pitch", type=float, default=28)
     ap.add_argument("--color", default="8fc1ea")
     ap.add_argument("--up", choices=["z", "y"], default="z")
+    ap.add_argument("--compare", help="a second mesh, rendered alike to the right")
     a = ap.parse_args()
-    mesh = trimesh.load(a.mesh, force="mesh", process=True)
-    if a.up == "y":
-        mesh.apply_transform(trimesh.transformations.rotation_matrix(np.pi / 2, [1, 0, 0]))
-    write_png(a.out, render(mesh, a.size[0], a.size[1], a.yaw, a.pitch, a.color))
+
+    def load(path):
+        mesh = trimesh.load(path, force="mesh", process=True)
+        if a.up == "y":
+            mesh.apply_transform(trimesh.transformations.rotation_matrix(np.pi / 2, [1, 0, 0]))
+        # Split the vertices at sharp creases, so smooth shading does not blur them.
+        return trimesh.graph.smooth_shade(mesh, angle=np.radians(60))
+
+    mesh = load(a.mesh)
+    if a.compare:
+        other = load(a.compare)
+        frame = np.vstack([mesh.vertices, other.vertices])
+        left = render(mesh, a.size[0], a.size[1], a.yaw, a.pitch, a.color, frame)
+        right = render(other, a.size[0], a.size[1], a.yaw, a.pitch, a.color, frame)
+        gap = np.zeros((a.size[1], a.size[0] // 20, 4), dtype=np.uint8)
+        write_png(a.out, np.concatenate([left, gap, right], axis=1))
+    else:
+        write_png(a.out, render(mesh, a.size[0], a.size[1], a.yaw, a.pitch, a.color))
     print(a.out, len(mesh.faces), "triangles")
 
 

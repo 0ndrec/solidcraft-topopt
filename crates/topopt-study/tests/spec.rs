@@ -87,3 +87,53 @@ fn keep_out_and_errors() {
     assert!(prepare_spec(&bad, &no_files, &mut Quiet).unwrap_err().contains("unknown material"));
     let _ = SupportSpec { region: Region::Box { min: [0.0; 3], max: [1.0; 3], tolerance: Some(0.0) }, dirs: [true; 3] };
 }
+
+#[test]
+fn the_filtered_field_is_kept_and_meshed_finer() {
+    let spec = small();
+    let job = prepare_spec(&spec, &no_files, &mut Quiet).unwrap();
+    let out = solve(&job, &mut Quiet).unwrap();
+    let d = &out.density;
+    // The filtered field is saved beside the projected one: pads 1, outside 0.
+    assert_eq!(d.filtered.len(), d.values.len());
+    for e in 0..d.values.len() {
+        if d.pads[e] {
+            assert_eq!(d.filtered[e], 1.0);
+        } else if !d.inside[e] {
+            assert_eq!(d.filtered[e], 0.0);
+        }
+    }
+    let surface = job.surface.as_ref().map(|(p, t)| (p.as_slice(), t.as_slice()));
+    // Upsampled ×2 (the default) and not: both valid; densities saved without the filtered field
+    // still mesh (from the projected values).
+    let mut coarse = job.study.clone();
+    coarse.mesh.upsample = 1;
+    let (fine_mesh, fine) = topopt_study::make_mesh(&job.study, d, surface).unwrap();
+    let (_, plain) = topopt_study::make_mesh(&coarse, d, surface).unwrap();
+    let mut old = d.clone();
+    old.filtered.clear();
+    let (_, legacy) = topopt_study::make_mesh(&job.study, &old, surface).unwrap();
+    for r in [&fine, &plain, &legacy] {
+        assert!(r.mesh.ok(), "{r:?}");
+    }
+    assert!(fine_mesh.validate(true).ok());
+    // Both describe the same part. This design is still grey after 15 iterations, where the
+    // interpolation moves the iso surface most (5 % here; 0.9 % on a converged bridge).
+    assert!((fine.mesh.volume - plain.mesh.volume).abs() < 0.08 * plain.mesh.volume, "{} vs {}", fine.mesh.volume, plain.mesh.volume);
+}
+
+#[test]
+fn trimming_through_solve_stays_within_its_stiffness_budget() {
+    let mut spec = small();
+    spec.mesh.trim_percent = 2.0;
+    let job = prepare_spec(&spec, &no_files, &mut Quiet).unwrap();
+    let out = solve(&job, &mut Quiet).unwrap();
+    assert!(out.mesh.validate(true).ok());
+    assert!(out.result.trimmed >= 0.0 && out.result.trimmed < 0.2, "{:?}", out.result);
+    // Trimmed cells are empty in both fields.
+    for e in 0..out.density.values.len() {
+        if out.density.values[e] == 0.0 && out.density.inside[e] {
+            assert!(out.density.filtered[e] <= 1.0);
+        }
+    }
+}

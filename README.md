@@ -20,12 +20,18 @@ Give it a design domain, where the part is held, where it is loaded and how much
 - **In a pipeline:** describe a study in JSON (a box, an STL or an inline mesh; supports and loads as boxes, spheres and planes) and run `topopt-solver solve`. You get PLY/STL, the density field and a JSON summary, with JSON-lines progress and meaningful exit codes.
 - **In your Rust code:** `topopt_solver::run()` in memory, with progress callbacks and cancellation; or the core, mesher and study crates on their own.
 
+<p align="center">
+  <img src="docs/images/smooth-struts.png" alt="Struts before and after: meshed from the voxels, and from the smooth filtered field sampled twice as finely" width="98%">
+  <br><i>Before and after: struts meshed from the voxel densities (left) and from the smooth filtered field, sampled ×2 (right).</i>
+</p>
+
 ![The TopOpt panel and ribbon in SolidCraft](docs/images/solidcraft-panel.png)
 
 ## Highlights
 
 - **Fast solver:** matrix-free Hex8 finite elements, geometric multigrid-preconditioned CG with element-wise Galerkin coarse levels, density filter, Heaviside projection with β-continuation, optimality criteria. Multi-threaded natively (rayon, lock-free coloured matrix-vector products); single-threaded in the plugin sandbox.
-- **Correct meshes:** marching tetrahedra (watertight and manifold by construction), island and cavity clean-up, Taubin smoothing pinned to the original CAD surface, QEM decimation, and a validator for every guarantee (closed, 2-manifold, oriented, no self-intersections, no f32 vertex collisions).
+- **Correct, smooth meshes:** marching tetrahedra on the optimizer's filtered field sampled ×2 (round members, not voxels), island and cavity clean-up, bilateral, HC or Taubin smoothing with volume preservation, the original CAD faces, sharp edges and corners kept exact, QEM decimation, and a validator for every guarantee (closed, 2-manifold, oriented, no self-intersections, folds or f32 vertex collisions).
+- **Optional trimming** of thin dead weight, piece by piece, within a stiffness budget you set.
 - **Verified:** the core agrees with an independent Python implementation to 1.45·10⁻⁸; meshes pass trimesh's watertightness checks and SolidCraft's `mesh.convert`.
 - **Works around the sandbox:** the plugin hands heavy runs to TopOpt Solver over a small file protocol and gets every CPU core (3–5× faster on a 6-core machine), and solves by itself when the solver is not running.
 

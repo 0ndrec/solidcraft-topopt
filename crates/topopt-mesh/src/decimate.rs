@@ -7,8 +7,9 @@
 //! - leave a vertex with fewer than three neighbours;
 //! - turn an adjacent triangle's normal by more than `max_normal_turn_deg`, or make one that is
 //!   needle-like and worse than before;
-//! - move a pinned vertex: a pinned vertex stays where it is and absorbs its neighbour; two
-//!   pinned vertices merge at one of their two positions.
+//! - move a pinned vertex: a pinned vertex stays where it is and absorbs its neighbour; of two
+//!   pinned vertices the higher-ranked one (corner > edge > face) is kept, and two of one rank
+//!   merge at one of their two positions.
 //!
 //! Quadrics are area-weighted; the error reported and limited is the mean squared distance to
 //! the planes a vertex has absorbed.
@@ -98,29 +99,42 @@ struct State<'a> {
     q: Vec<Quadric>,
     stamp: Vec<u32>,
     dead: Vec<bool>,
-    pinned: &'a [bool],
+    rank: &'a [u8],
 }
 
 impl State<'_> {
-    fn ring(&self, v: u32) -> HashSet<u32> {
-        let mut r = HashSet::new();
+    /// The vertices around `v`, sorted (a fixed order keeps decimation deterministic).
+    fn ring(&self, v: u32) -> Vec<u32> {
+        let mut r = Vec::new();
         for &t in &self.vtris[v as usize] {
             if self.alive[t as usize] {
                 for &w in &self.tris[t as usize] {
                     if w != v {
-                        r.insert(w);
+                        r.push(w);
                     }
                 }
             }
         }
+        r.sort_unstable();
+        r.dedup();
         r
     }
 
     fn candidate(&self, u: u32, v: u32) -> Option<Candidate> {
-        let (pu, pv) = (self.pinned[u as usize], self.pinned[v as usize]);
-        // The kept vertex is the pinned one, if any. Two pinned vertices may merge into either
-        // one's position: both lie on the original surface, so the result does too.
-        let (keep, gone) = if pu && pv {
+        let (ru, rv) = (self.rank[u as usize], self.rank[v as usize]);
+        // Vertices on sharp edges and corners (rank ≥ 2) are kept: only two crease vertices may
+        // merge, along the crease. Folding a face's triangles into a crease vertex turns them
+        // across the crease, where the normal-turn guard alone does not stop crossings.
+        if (ru >= 2 || rv >= 2) && !(ru == 2 && rv == 2) {
+            return None;
+        }
+        let (pu, pv) = (ru > 0, rv > 0);
+        // The kept vertex is the pinned one, if any; of two, the higher rank (a vertex on a sharp
+        // edge absorbs one on a face, not the other way round). Two of one rank may merge into
+        // either one's position: both lie on the same kind of feature, so the result does too.
+        let (keep, gone) = if ru != rv && pu && pv {
+            if ru > rv { (u, v) } else { (v, u) }
+        } else if pu && pv {
             let mut q = self.q[u as usize];
             for (a, b) in q.iter_mut().zip(&self.q[v as usize]) {
                 *a += b;
@@ -172,7 +186,7 @@ impl State<'_> {
     /// Whether collapsing `v` into `u` at `p` keeps the mesh valid (see module docs).
     fn allowed(&self, u: u32, v: u32, p: [f64; 3], cos_limit: f64, min_quality: f64) -> bool {
         let (ru, rv) = (self.ring(u), self.ring(v));
-        let common: Vec<u32> = ru.intersection(&rv).copied().collect();
+        let common: Vec<u32> = ru.iter().copied().filter(|w| rv.binary_search(w).is_ok()).collect();
         if common.len() != 2 {
             return false;
         }
@@ -245,7 +259,21 @@ impl State<'_> {
 /// Collapses edges until the mesh has `target_triangles` or the next collapse would exceed
 /// `max_error`. Returns the number of collapses. `pinned` has one flag per vertex.
 pub fn decimate(mesh: &mut Mesh, pinned: &[bool], opts: &DecimateOptions) -> usize {
-    assert_eq!(pinned.len(), mesh.positions.len());
+    let rank: Vec<u8> = pinned.iter().map(|&p| p as u8).collect();
+    let collapses = decimate_ranked(mesh, &rank, opts);
+    mesh.compact();
+    collapses
+}
+
+/// A rank that forbids every collapse touching the vertex.
+pub const LOCKED: u8 = u8::MAX;
+
+/// [`decimate`] with ranked pins: 0 free, 1 on a face (moves only onto another pinned vertex),
+/// 2 on a sharp edge (merges only with another edge vertex), 3 and more never collapses
+/// ([`LOCKED`] included). Vertex indices are kept (removed vertices are left unused), so a caller
+/// can map results back; [`Mesh::compact`] drops them.
+pub fn decimate_ranked(mesh: &mut Mesh, rank: &[u8], opts: &DecimateOptions) -> usize {
+    assert_eq!(rank.len(), mesh.positions.len());
     let nv = mesh.positions.len();
     let mut s = State {
         pos: mesh.positions.clone(),
@@ -255,7 +283,7 @@ pub fn decimate(mesh: &mut Mesh, pinned: &[bool], opts: &DecimateOptions) -> usi
         q: vec![[0.0; 11]; nv],
         stamp: vec![0; nv],
         dead: vec![false; nv],
-        pinned,
+        rank,
     };
     for (t, tri) in s.tris.iter().enumerate() {
         let pq = plane_quadric(s.pos[tri[0] as usize], s.pos[tri[1] as usize], s.pos[tri[2] as usize]);
@@ -304,6 +332,5 @@ pub fn decimate(mesh: &mut Mesh, pinned: &[bool], opts: &DecimateOptions) -> usi
     }
     mesh.triangles = s.tris.iter().zip(&s.alive).filter(|(_, a)| **a).map(|(t, _)| *t).collect();
     mesh.positions = s.pos;
-    mesh.compact();
     collapses
 }

@@ -125,11 +125,38 @@ pub struct MeshSettings {
     pub convert_solid: bool,
     /// Density threshold of the surface.
     pub iso: f64,
+    /// Smoother: `taubin`, `hc` or `bilateral` (see [`SMOOTHERS`]).
+    pub smoother: String,
+    /// Restore the volume smoothing takes, by offsetting the free surface along its normals.
+    pub preserve_volume: bool,
+    /// Keep the sharp edges and corners of the design body sharp (with `keep_faces`).
+    pub sharp_edges: bool,
+    /// Sample the density field this many times finer (1…3) before making the surface: 2 gives
+    /// round members instead of faceted ones, for about 8× the meshing work.
+    pub upsample: usize,
+    /// Trim thin pieces as long as the stiffness drops by at most this many percent (0 = off).
+    pub trim_percent: f64,
 }
+
+/// Smoothers of the result mesh: id and label.
+pub const SMOOTHERS: [(&str, &str); 3] = [("taubin", "Taubin"), ("hc", "HC (keeps volume)"), ("bilateral", "Bilateral (keeps creases)")];
 
 impl Default for MeshSettings {
     fn default() -> Self {
-        MeshSettings { triangles: 30_000, smoothing: 10, keep_faces: true, remove_islands: true, fill_cavities: true, convert_solid: true, iso: 0.5 }
+        MeshSettings {
+            triangles: 30_000,
+            smoothing: 20,
+            keep_faces: true,
+            remove_islands: true,
+            fill_cavities: true,
+            convert_solid: true,
+            iso: 0.5,
+            smoother: "bilateral".into(),
+            preserve_volume: true,
+            sharp_edges: true,
+            upsample: 2,
+            trim_percent: 0.0,
+        }
     }
 }
 
@@ -236,6 +263,8 @@ pub struct RunResult {
     /// `create-body` already inserted this result.
     pub inserted: bool,
     pub warnings: Vec<String>,
+    /// Share of the material trimmed as dead weight (`MeshSettings::trim_percent`).
+    pub trimmed: f64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -361,6 +390,15 @@ impl Study {
             "mesh/fill_cavities" => m.fill_cavities = flag()?,
             "mesh/convert_solid" => m.convert_solid = flag()?,
             "mesh/iso" => m.iso = pos(num()?, 0.1, 0.9)?,
+            "mesh/smoother" => {
+                let text = v.as_str().ok_or("smoother: expected a name")?;
+                let id = SMOOTHERS.iter().find(|x| x.0 == text || x.1 == text).ok_or(format!("unknown smoother `{text}`"))?.0;
+                m.smoother = id.into();
+            }
+            "mesh/preserve_volume" => m.preserve_volume = flag()?,
+            "mesh/sharp_edges" => m.sharp_edges = flag()?,
+            "mesh/upsample" => m.upsample = pos(num()?, 1.0, 3.0)?.round() as usize,
+            "mesh/trim_percent" => m.trim_percent = pos(num()?, 0.0, 10.0)?,
             other => return Err(format!("unknown setting `{other}`")),
         }
         Ok(())

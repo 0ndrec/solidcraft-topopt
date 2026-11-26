@@ -46,7 +46,21 @@ The matrix-free Hex8 product runs at about 2 GFLOP/s in the sandbox (Cranelift):
 
 **Marching tetrahedra instead of marching cubes.** On the Freudenthal split every tetrahedron yields a flat triangle or a convex quad, so the surface is watertight and manifold by construction, with no ambiguous cases. Component clean-up uses the same 14-neighbour connectivity, so after it the mesh is exactly one shell without voids.
 
-**Our own decimation instead of the host's `mesh.reduce`**: it respects pinned vertices and checks manifoldness.
+**Our own decimation instead of the host's `mesh.reduce`**: it respects pinned vertices and checks manifoldness. It must be deterministic: it once iterated a hash set, so the same input sometimes left a self-intersection and fell back to a 1.5× larger budget; neighbourhoods are now sorted, and crossings lock their neighbourhood and decimate again before the budget grows.
+
+**Sharp edges by inserting vertices, not by snapping them.** Marching tetrahedra chamfers or rounds the creases of the part (on two of a box's four parallel edges the split's diagonals cut across them, by up to 0.5 h). Snapping the nearest contour vertices onto the crease collapsed triangles (two chamfer vertices land on the same point) and was undone by the self-intersection fallback. Splitting every mesh edge that crosses the crease's bisector plane at the crease puts vertices exactly on it while the chamfer's vertices stay on their faces; the box comes out exact, and a real cantilever's clamp edges went from 0.66 mm to 0.00 mm off.
+
+**Bilateral filtering on normals, not on vertices.** Fleishman et al.'s vertex filter, on marching-tetrahedra triangles, pulled the walls of thin members together and crossed the surface hundreds of times. Filtering triangle normals (Zheng et al.) and moving each vertex towards its own triangles' planes (Sun et al.) is stable and gave the most accurate surfaces in the comparisons ([topopt-mesh.md](topopt-mesh.md#measurements)).
+
+**Round members: mesh the filtered field, finer.** The optimizer's projected densities are nearly 0 or 1 per element, so any surface through them is voxels smoothed afterwards; struts three or four elements thick come out beaded. The filtered field before the projection carries the same surface (the projection threshold is the iso value) but varies smoothly; sampled ×2 by cubic interpolation and smoothed bilaterally, strut cross-sections on a bridge fit an ellipse to 0.984 instead of 0.956. What did not work: smoothing a distance field (it closed 26 of 31 holes), mean-curvature flow (it crossed the surface on thin parts and fell back to no smoothing), stronger smoothing of the projected field alone (0.971).
+
+**Folds are checked.** Upsampling plus crease insertion once produced triangles folded flat onto each other in a planar face: no crossing, but SolidCraft's `mesh.convert` refused the mesh ("a planar group's boundary does not enclose it"). Folds are now part of `Mesh::validate` and of the smoothing safety loop.
+
+**Thin plates along a face keep their thickness.** A face pin used to accept a vertex whose normal was parallel to the face either way, so the inner side of a one-element plate was pinned onto the face too, flattening the plate (a bridge deck: 31 % of the part's volume). A vertex is now pinned only if its outward normal agrees with the face's.
+
+**"Stalactites" are mostly load-carrying.** Thin hooks and strands hanging from members looked like dead ends. Selecting elements by low strain energy found almost none (the lowest 1 % still had 20 % of the mean energy); removing thin pieces one by one with re-analysis showed they cost more stiffness than their share of the mass (cantilever: 0.9 % of the material, 1.4 % of the stiffness). Under the bridge deck they are ribs stiffening the thin loaded deck: a thicker load pad removes them, but changes the whole design. Hence trimming exists with an explicit stiffness budget and is off by default.
+
+**Volume preservation restores the contour's volume, with a bounded offset.** Smoothing shrinks; offsetting the free vertices along their normals (Newton on the exact volume derivative) undoes that for any smoother. When almost every vertex is pinned, the few free ones would have to carry the whole correction and grew 0.15 h bumps, so the offset is limited by the free share of the surface.
 
 **Pinning to the original surface.** Mounting faces and holes must stay exact, so vertices near the original surface are projected onto it during smoothing. Pinning blindly folded triangles at edges (both sides of an edge projected onto different faces); now a vertex is pinned only when the projection direction agrees with the normal of a freely smoothed copy, and vertices of offending triangles are unpinned selectively.
 
@@ -90,7 +104,12 @@ Inside the plugin: impossible (no GPU access; plugin WGSL shaders cannot use sto
 
 Quality:
 - [ ] Account for the fill fraction of boundary voxels (on coarse grids the result is 2–8 % below the target volume).
-- [ ] Sharp edges of the original body when projecting vertices.
+- [x] Sharp edges and corners of the original body (crease insertion, ranked pins in decimation).
+- [x] Volume-preserving smoothing; HC and bilateral smoothers.
+- [ ] Sharpen creases the optimizer makes inside the domain (feature detection on the result itself).
+- [x] Round members: filtered field, ×2 cubic upsampling, bilateral smoothing.
+- [x] Optional trimming of thin dead weight within a stiffness budget.
+- [ ] Faster ×2 meshing (the smoothing and decimation of 4× more triangles dominate).
 - [ ] `plan_grid`: rounding dimensions to multiples of 4 can waste half the budget on small grids (a 4000 budget gives 1536 elements on 120×40×40); choose the dimensions closest to the budget from below.
 - [ ] Recalibrate `estimate_seconds` for the new multigrid thresholds (native estimates are high).
 - [ ] Semi-coarsening for thin domains.

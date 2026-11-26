@@ -2,6 +2,7 @@
 //!
 //!   topopt-solver solve INPUT.json [options]   one study → mesh, densities, summary
 //!   topopt-solver check INPUT.json             build the problem only, print a report
+//!   topopt-solver remesh INPUT.json --density D.json --mesh OUT   mesh saved densities again
 //!   topopt-solver example                      print an example spec
 //!   topopt-solver watch [FOLDER] [--once]      serve the TopOpt plugin (its "results" folder)
 //!   topopt-solver version
@@ -14,7 +15,7 @@ use std::path::{Path, PathBuf};
 use std::process::exit;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use topopt_solver::{Event, Folder, Input, RunOptions, VERSION, check, run, serve};
+use topopt_solver::{Event, Folder, Input, RunOptions, VERSION, check, mesh_bytes, remesh, run, serve, write_atomic};
 
 /// Exit codes.
 const OK: i32 = 0;
@@ -28,6 +29,11 @@ TopOpt Solver — topology optimization on all CPU cores
 usage:
   topopt-solver solve INPUT.json [options]   solve one study (a spec, or a TopOpt plugin job)
   topopt-solver check INPUT.json             build the problem only; print a JSON report
+  topopt-solver remesh INPUT.json --density FILE --mesh FILE [--trim PERCENT]
+                                             make the mesh again from a run's densities with
+                                             INPUT's mesh settings (no optimization); --trim
+                                             removes thin dead weight costing at most PERCENT
+                                             of the stiffness (overrides mesh.trim_percent)
   topopt-solver example                      print an example spec (JSON) to start from
   topopt-solver watch [FOLDER] [--once]      solve the TopOpt plugin's jobs in its results folder
   topopt-solver version
@@ -197,7 +203,54 @@ fn solve_cmd(args: &[String]) -> i32 {
             OK
         }
         Err(e) if e == "cancelled" => CANCELLED,
-        Err(_) => FAILED,
+        Err(e) => {
+            // The progress stream already reported it, unless it is off.
+            if progress == Progress::None {
+                eprintln!("topopt-solver: {e}");
+            }
+            FAILED
+        }
+    }
+}
+
+fn remesh_cmd(args: &[String]) -> i32 {
+    let (mut input, mut density, mut mesh) = (None, None, None);
+    let mut trim: Option<f64> = None;
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        let mut value = |flag: &str| it.next().cloned().unwrap_or_else(|| usage(&format!("{flag} needs a value")));
+        match a.as_str() {
+            "--density" => density = Some(PathBuf::from(value(a))),
+            "--mesh" => mesh = Some(PathBuf::from(value(a))),
+            "--threads" => set_threads(&value(a)),
+            "--trim" => {
+                let v = value(a);
+                trim = Some(v.parse().ok().filter(|&t: &f64| (0.0..=10.0).contains(&t)).unwrap_or_else(|| usage(&format!("--trim {v}: the stiffness loss allowed, in percent (0…10)"))));
+            }
+            f if f.starts_with("--") => usage(&format!("unknown option {f}")),
+            path if input.is_none() => input = Some(path.to_string()),
+            extra => usage(&format!("unexpected argument {extra}")),
+        }
+    }
+    let input = read_input(&input.unwrap_or_else(|| usage("remesh needs an INPUT.json")));
+    let density_path = density.unwrap_or_else(|| usage("remesh needs --density FILE"));
+    let mesh_path = mesh.unwrap_or_else(|| usage("remesh needs --mesh FILE"));
+    let bytes = std::fs::read(&density_path).unwrap_or_else(|e| usage(&format!("{}: {e}", density_path.display())));
+    let density: topopt_study::Density =
+        serde_json::from_slice(&bytes).unwrap_or_else(|e| usage(&format!("{}: not a density file: {e}", density_path.display())));
+    match remesh(&input, &density, trim) {
+        Ok((mesh, report)) => {
+            if let Err(e) = write_atomic(&mesh_path, &mesh_bytes(&mesh, &mesh_path, &format!("TopOpt {}", input.name()))) {
+                eprintln!("topopt-solver: {}: {e}", mesh_path.display());
+                return FAILED;
+            }
+            print_json(&report);
+            OK
+        }
+        Err(e) => {
+            eprintln!("topopt-solver: {e}");
+            FAILED
+        }
     }
 }
 
@@ -260,6 +313,7 @@ fn main() {
     let code = match args.first().map(String::as_str) {
         Some("solve") => solve_cmd(&args[1..]),
         Some("check") => check_cmd(&args[1..]),
+        Some("remesh") => remesh_cmd(&args[1..]),
         Some("watch") => watch_cmd(&args[1..]),
         Some("example") => {
             print_json(&topopt_solver::spec::Spec::example());

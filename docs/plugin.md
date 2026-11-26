@@ -1,6 +1,6 @@
 # The TopOpt plugin for SolidCraft — user guide
 
-The TopOpt plugin (v0.6.0, SolidCraft 0.49.1) does **topology optimization** in your model. You say where material may go, where the part is held and where it is pushed; the plugin finds the stiffest shape from the share of material you allow and inserts it into the model as a body.
+The TopOpt plugin (v0.7.0, SolidCraft 0.49.1) does **topology optimization** in your model. You say where material may go, where the part is held and where it is pushed; the plugin finds the stiffest shape from the share of material you allow and inserts it into the model as a body.
 
 ![The TopOpt panel and ribbon in SolidCraft](images/solidcraft-panel.png)
 
@@ -65,7 +65,13 @@ Optimize is a long-running job: progress and Cancel are in the operations panel 
 
 Inserts the result as a mesh body and, when "Create body makes a solid" is on (Mesh tab), converts it to a solid. The **Run** tab summarizes the run: outcome, iterations and time, volume share, mass, compliance (lower is stiffer), grid, triangles and genus (through-holes), warnings.
 
-**Re-mesh** makes a new mesh from the saved densities with other Mesh settings (triangles, smoothing, threshold) without optimizing again.
+**Re-mesh** makes a new mesh from the saved densities with other Mesh settings (triangles, smoothing, smoother, finer surface, sharp edges, threshold) without optimizing again. Trimming happens during Optimize (Re-mesh keeps what was trimmed).
+
+The surface is made from the optimizer's smooth (filtered) densities, sampled twice as finely: members come out round instead of beaded. With the default settings this takes some seconds more than before; set "Finer surface" to 1 for the fastest mesh.
+
+**Trim dead weight** (Advanced, off by default): after Optimize, thin spikes and hooks are removed one by one as long as the part loses no more than the given percentage of its stiffness. Such pieces mostly carry some load, so expect it to remove little; the Run tab shows what was trimmed.
+
+With "Keep the body's faces exact" and "Keep its sharp edges sharp" (both on by default), the result's mounting faces lie on the design body's faces and its edges and corners on the body's edges and corners. If the sharp edges cannot be kept without the surface crossing itself, they are rounded and the Run tab says so in its warnings.
 
 ## Panel tabs
 
@@ -75,8 +81,8 @@ Inserts the result as a mesh body and, when "Create body makes a solid" is on (M
 | **Run** | Optimize, Create body, Re-mesh, Refresh; study status (where it runs, time estimate); the result |
 | **Settings** | Keep %, element size, element budget, thinnest member, max iterations (default 150), time limit (480 s) |
 | **Material** | Preset (aluminium 6061 and 7075, structural steel, stainless 316, Ti-6Al-4V, PLA, PETG, ABS, PA12, Custom); E, ν, density |
-| **Mesh** | Triangles (up to 50 000), smoothing passes, keep the body's faces exact, remove floating pieces, fill closed cavities, Create body makes a solid |
-| **Advanced** | Use TopOpt Solver when it is running; pad thickness under supports and loads; SIMP penalty; final sharpness β; move limit; surface density threshold |
+| **Mesh** | Triangles (up to 50 000), smoothing passes (20), smoother (Bilateral, the default: keeps creases and gives the most accurate surface; Taubin, the fastest; HC, which keeps the volume), finer surface (2 = round members, 1 = faster), keep the body's faces exact, keep its sharp edges sharp, remove floating pieces, fill closed cavities, Create body makes a solid |
+| **Advanced** | Use TopOpt Solver when it is running; pad thickness under supports and loads; SIMP penalty; final sharpness β; move limit; surface density threshold; keep the volume while smoothing; trim dead weight costing up to a given % of stiffness (0 = off) |
 
 Every change in the panel is one undo step. The study is stored in the design file, and the densities in the plugin's data inside the design (for Re-mesh).
 
@@ -105,7 +111,7 @@ The solver also solves studies without SolidCraft, from the command line and scr
 
 - The body must be in the root component: mesh and pick coordinates are taken as world coordinates.
 - On a coarse grid the result's volume is 2–8 % below the target: keeping the faces exact trims voxelization half-cells.
-- Sharp edges of the original body come out slightly stepped.
+- Curved edges of the design body (a hole's rim) follow its tessellation from `model.mesh`, so they are slightly polygonal.
 - The result mesh has at most 50 000 triangles, because the host lets a plugin write at most 1 MiB at a time.
 - The first run after installing uses the baseline compiler and is about twice as slow; the compiled code is then cached.
 - The solver's progress in the panel updates on Refresh, not by itself, and the panel has no Cancel for a solver job.

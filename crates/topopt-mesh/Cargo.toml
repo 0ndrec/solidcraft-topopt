@@ -12,3 +12,4 @@ parry3d-f64 = "0.31.1"
 
 [dev-dependencies]
 topopt-core = { path = "../topopt-core" }
+serde_json.workspace = true

@@ -211,9 +211,108 @@ pub fn clean_components(field: &mut Field, iso: f64, anchors: Option<&[bool]>, r
     report
 }
 
+/// A cell field resampled `k` times finer along each axis (cell-centred, `k³` cells per cell) by
+/// separable cubic (Catmull-Rom) interpolation, clamped to 0…1. Contouring the finer field gives
+/// round, smooth members where the coarse one gives faceted ones: the surface between two samples
+/// follows a cubic instead of a straight line. Returns the new dimensions and values.
+pub fn upsample_cells(dims: [usize; 3], cells: &[f64], k: usize) -> ([usize; 3], Vec<f64>) {
+    assert_eq!(cells.len(), dims[0] * dims[1] * dims[2]);
+    if k <= 1 {
+        return (dims, cells.to_vec());
+    }
+    // One axis at a time: `src` has `n` samples along `axis`, the result `n·k`.
+    let mut cur = cells.to_vec();
+    let mut cd = dims;
+    for axis in 0..3 {
+        let n = cd[axis];
+        let mut nd = cd;
+        nd[axis] = n * k;
+        let stride = |d: [usize; 3], a: usize| match a {
+            0 => 1,
+            1 => d[0],
+            _ => d[0] * d[1],
+        };
+        let (s_old, s_new) = (stride(cd, axis), stride(nd, axis));
+        // Weights for each fine sample along the axis: base index and four Catmull-Rom weights.
+        let taps: Vec<(i64, [f64; 4])> = (0..n * k)
+            .map(|s| {
+                let x = (s as f64 + 0.5) / k as f64 - 0.5;
+                let i0 = x.floor();
+                let t = x - i0;
+                let (t2, t3) = (t * t, t * t * t);
+                let w = [
+                    0.5 * (-t3 + 2.0 * t2 - t),
+                    0.5 * (3.0 * t3 - 5.0 * t2 + 2.0),
+                    0.5 * (-3.0 * t3 + 4.0 * t2 + t),
+                    0.5 * (t3 - t2),
+                ];
+                (i0 as i64, w)
+            })
+            .collect();
+        let mut out = vec![0.0; nd[0] * nd[1] * nd[2]];
+        // Lines along the axis: every combination of the other two indices.
+        let (a1, a2) = match axis {
+            0 => (1, 2),
+            1 => (0, 2),
+            _ => (0, 1),
+        };
+        for q2 in 0..cd[a2] {
+            for q1 in 0..cd[a1] {
+                let mut base_old = 0;
+                let mut base_new = 0;
+                base_old += q1 * stride(cd, a1) + q2 * stride(cd, a2);
+                base_new += q1 * stride(nd, a1) + q2 * stride(nd, a2);
+                for (s, (i0, w)) in taps.iter().enumerate() {
+                    let mut v = 0.0;
+                    for (m, wm) in w.iter().enumerate() {
+                        let i = (i0 - 1 + m as i64).clamp(0, n as i64 - 1) as usize;
+                        v += wm * cur[base_old + i * s_old];
+                    }
+                    out[base_new + s * s_new] = v;
+                }
+            }
+        }
+        cur = out;
+        cd = nd;
+    }
+    for v in &mut cur {
+        *v = v.clamp(0.0, 1.0);
+    }
+    (cd, cur)
+}
+
+/// A per-cell flag on a grid `k` times finer (each fine cell takes its coarse cell's flag).
+pub fn upsample_mask(dims: [usize; 3], cells: &[bool], k: usize) -> Vec<bool> {
+    let nd = [dims[0] * k, dims[1] * k, dims[2] * k];
+    let mut out = vec![false; nd[0] * nd[1] * nd[2]];
+    for z in 0..nd[2] {
+        for y in 0..nd[1] {
+            for x in 0..nd[0] {
+                out[x + nd[0] * (y + nd[1] * z)] = cells[x / k + dims[0] * (y / k + dims[1] * (z / k))];
+            }
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn upsampling_keeps_constants_and_lines_and_the_iso_surface() {
+        // A constant stays constant; a linear ramp stays linear inside (clamped at the ends).
+        let dims = [4, 3, 2];
+        let (nd, c) = upsample_cells(dims, &vec![0.7; 24], 2);
+        assert_eq!(nd, [8, 6, 4]);
+        assert!(c.iter().all(|&v| (v - 0.7).abs() < 1e-12));
+        let ramp: Vec<f64> = (0..24).map(|e| 0.1 + 0.2 * (e % 4) as f64).collect();
+        let (_, r) = upsample_cells(dims, &ramp, 2);
+        // Fine sample x = 3 sits at coarse position 1.25: 0.1 + 0.2·1.25 = 0.35.
+        assert!((r[3] - 0.35).abs() < 1e-12, "{}", r[3]);
+        let m = upsample_mask([2, 1, 1], &[true, false], 2);
+        assert_eq!(m, [true, true, false, false].repeat(4), "4×2×2 cells, two of each four from the first coarse cell");
+    }
 
     #[test]
     fn islands_removed_cavities_filled() {

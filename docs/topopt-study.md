@@ -34,7 +34,8 @@ Spec         │ shape_mesh → voxelize(MeshCaster) → assemble → Job │   
 | `prepare_spec(spec, read_file, hooks) -> Job` | The same from a spec; `read_file(path)` returns a file's bytes (STL), so the caller decides where files come from |
 | `solve(job, hooks) -> Outcome { mesh, density, result }` | Optimize and mesh. Multigrid settings are the defaults **of the platform it runs on**, not taken from the job |
 | `run(...)` | `prepare` + `solve` in one call |
-| `make_mesh(study, density, surface) -> (Mesh, MeshReport)` | Only the mesh, from saved densities (Re-mesh) |
+| `make_mesh(study, density, surface) -> (Mesh, topopt_mesh::Report)` | Only the mesh, from saved densities (Re-mesh), with the study's mesh settings (smoother, upsampling, volume, sharp edges…). It meshes `Density::filtered` (the densities before projection) when present, sampled `mesh.upsample` times finer |
+| `mesh_warnings(study, report, surface_given)` | Warnings to show about such a mesh (sharp edges that had to be rounded) |
 
 ### `Hooks`
 
@@ -72,6 +73,7 @@ pub struct Hit { pub point: [f64; 3], pub normal: [f64; 3], pub face: u32 }
 | `FaceRef { body, index, point, label }` | A face: body, face number (`model.faces`), the picked point, a label |
 | `Settings`, `MeshSettings` | Fields and defaults in [topopt-solver.md §4.7–4.8](topopt-solver.md#47-settings) |
 | `Material`, `MATERIALS` | 9 presets (`aluminium-6061` … `nylon`): E, ν, density |
+| `SMOOTHERS` | The mesh smoothers: id and label (`taubin`, `hc`, `bilateral`) |
 | `RunResult` | The run summary ([topopt-solver.md §5.3](topopt-solver.md#53-summary-resultjson)) |
 | `Study::add / remove / set_option / problems` | Edits from dialogs and panel events; what is missing before a run |
 
@@ -86,6 +88,14 @@ pub struct Hit { pub point: [f64; 3], pub normal: [f64; 3], pub face: u32 }
 5. `finish_job`: the volume fraction is converted from a fraction of the body to a fraction of the design elements (accounting for the pads) and clamped to 0.05…0.95; the filter radius is `rmin = max(1.5, min_member / 2h)`.
 
 Specs (`spec::assemble`) work the same way, except that nodes are chosen by **regions**, preferably on the surface of the material ([topopt-solver.md §4.3](topopt-solver.md#43-regions-supports-loads-keep_in)).
+
+### Densities
+
+`Density { grid, values, pads, inside, filtered }`: `values` are the physical densities the analysis used (after filter and projection), `filtered` the filtered densities before the projection, with pads 1 and outside 0. The projection makes `values` nearly 0 or 1 per element, so a surface through them follows the voxels; the filtered field varies smoothly and places the same surface (the projection's threshold equals the iso value) between element centres, which together with ×2 cubic upsampling gives round members. Densities saved before `filtered` existed deserialize with it empty and mesh from `values`.
+
+### Trimming dead weight (`trim`)
+
+`trim::trim_dead_ends(problem, settings, x, iso, &TrimSettings) -> (densities, TrimReport)` removes thin pieces that add almost no stiffness: it analyses the part as made (thresholded at `iso`), takes the thin parts (removed by a 3×3×3 morphological opening, pads excluded), and removes each piece on trial, keeping the removal if the compliance grows by less than `piece_loss` and all removals by less than `max_loss`. `trim::apply(&mut density, &trimmed)` empties the removed cells in both fields. `solve` runs it when `mesh.trim_percent` > 0 (`max_loss` = that percent, `piece_loss` = half of it) and reports it in `RunResult::trimmed` and the warnings. Why the criterion is the stiffness and not the strain energy or the shape: [topopt-solver.md §4.10](topopt-solver.md#410-trimming-thin-dead-weight).
 
 ### Specs (`spec`)
 
@@ -131,7 +141,8 @@ Without face numbers (just a mesh or an STL), a spec is simpler: `prepare_spec` 
 | File | Checks |
 |---|---|
 | `tests/run.rs` | Box voxelization (volume within 4 %, all 6 faces sampled, no unbalanced rays); an end-to-end "support −X, load +X" study; a "normal" load equals the vector |
-| `tests/spec.rs` | The example spec solves; box, inline mesh and STL in metres (`scale` 1000) voxelize alike; keep-outs; clear region errors; JSON round trip |
+| `tests/spec.rs` | The example spec solves; box, inline mesh and STL in metres (`scale` 1000) voxelize alike; keep-outs; clear region errors; JSON round trip; the filtered field is saved (pads 1, outside 0) and meshes ×2, ×1 and from older files; trimming through `solve` |
+| `tests/trim.rs` | A spike near a beam's free end is trimmed, the beam kept (the same spike mid-span stiffens the flange and stays) |
 | unit | `set_option` and study JSON, "next step" hints through the steps, protocol parts and heartbeat |
 
 ```sh

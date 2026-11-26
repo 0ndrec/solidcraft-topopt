@@ -107,7 +107,8 @@ fn random_fields_always_give_valid_meshes() {
         }
         // Full pipeline: one shell, smoothed, decimated, still valid.
         let f = Field::from_cells(dims, 1.0, [0.0; 3], &cells, 1);
-        let opts = Options { blur_passes: (seed0 % 2) as usize, target_triangles: Some(200), ..Default::default() };
+        let smoother = [topopt_mesh::Smoother::Taubin, topopt_mesh::Smoother::Hc, topopt_mesh::Smoother::Bilateral][(seed0 % 3) as usize];
+        let opts = Options { blur_passes: (seed0 % 2) as usize, smoother, target_triangles: Some(200), ..Default::default() };
         match extract(f, None, None, &opts) {
             Ok((_, rep)) => {
                 assert!(rep.mesh.ok(), "seed {seed0}: {rep:?}");
@@ -142,4 +143,71 @@ fn pinned_vertices_land_on_the_original_surface() {
     assert!((rep.mesh.volume - exact).abs() / exact < 0.02, "volume {} vs {exact}", rep.mesh.volume);
     // STL: 84-byte header + 50 bytes per triangle.
     assert_eq!(m.to_stl("test").len(), 84 + 50 * m.triangles.len());
+}
+
+/// A box (closed, outward) as positions and triangles.
+fn box_surface(lo: [f64; 3], hi: [f64; 3]) -> (Vec<[f64; 3]>, Vec<[u32; 3]>) {
+    let c = |i: usize| [if i & 1 == 1 { hi[0] } else { lo[0] }, if i & 2 == 2 { hi[1] } else { lo[1] }, if i & 4 == 4 { hi[2] } else { lo[2] }];
+    (
+        vec![c(0), c(1), c(3), c(2), c(4), c(5), c(7), c(6)],
+        vec![[0, 2, 1], [0, 3, 2], [4, 5, 6], [4, 6, 7], [0, 1, 5], [0, 5, 4], [1, 2, 6], [1, 6, 5], [2, 3, 7], [2, 7, 6], [3, 0, 4], [3, 4, 7]],
+    )
+}
+
+#[test]
+fn sharp_edges_and_corners_of_the_original_surface_are_kept() {
+    // A solid box: marching tetrahedra chamfers two of its four x-edges (the split's diagonals),
+    // and rounds its corners. With sharp edges the result is the box itself.
+    let (lo, hi) = ([0.0; 3], [20.0, 12.0, 8.0]);
+    let dims = [20, 12, 8];
+    let cells = vec![1.0; dims[0] * dims[1] * dims[2]];
+    let (bp, bt) = box_surface(lo, hi);
+    let proj = Projector::new(&bp, &bt).unwrap();
+    let exact = 20.0 * 12.0 * 8.0;
+    let edge_error = |sharp: bool| {
+        let f = Field::from_cells(dims, 1.0, lo, &cells, 1);
+        let (m, rep) = extract(f, None, Some(&proj), &Options { sharp_edges: sharp, target_triangles: Some(800), ..Default::default() }).unwrap();
+        assert!(rep.mesh.ok(), "{rep:?}");
+        let on = Projector::with_feature_angle(&m.positions, &m.triangles, 0.0).unwrap();
+        let mut worst: f64 = 0.0;
+        for t in 0..=20 {
+            let x = t as f64;
+            for (y, z) in [(0.0, 0.0), (12.0, 0.0), (0.0, 8.0), (12.0, 8.0)] {
+                worst = worst.max(on.project([x, y, z]).1);
+            }
+        }
+        (worst, rep)
+    };
+    let (soft, _) = edge_error(false);
+    let (sharp, rep) = edge_error(true);
+    assert!(soft > 0.3, "the contour alone rounds edges ({soft})");
+    assert!(sharp < 1e-6, "edges kept: worst distance {sharp}");
+    assert!(rep.sharp_edges && rep.crease_vertices > 0 && rep.corner_vertices == 8, "{rep:?}");
+    assert!((rep.mesh.volume - exact).abs() / exact < 1e-9, "volume {} vs {exact}", rep.mesh.volume);
+    assert!(rep.mesh.triangles <= 800, "the box decimates: {}", rep.mesh.triangles);
+}
+
+#[test]
+fn smoothers_keep_the_volume_and_the_result_is_deterministic() {
+    use topopt_mesh::Smoother;
+    let (h, r) = (1.0, 6.3);
+    let dims = [20, 20, 20];
+    let cells = cells_from_sdf(dims, h, sphere_sdf([10.0; 3], r));
+    let run = |smoother, preserve_volume| {
+        let f = Field::from_cells(dims, h, [0.0; 3], &cells, 1);
+        extract(f, None, None, &Options { smoother, preserve_volume, target_triangles: Some(3000), ..Default::default() }).unwrap()
+    };
+    for smoother in [Smoother::Taubin, Smoother::Hc, Smoother::Bilateral] {
+        let (m, rep) = run(smoother, true);
+        assert!(rep.mesh.ok(), "{smoother:?}: {rep:?}");
+        assert_eq!(rep.smooth_iterations, 10, "{smoother:?} needed no back-off");
+        // Before decimation the smoothed volume is the contour's; decimation moves it a little.
+        assert!((rep.smoothed_volume - rep.pinned_volume).abs() / rep.pinned_volume < 1e-6, "{smoother:?}: {rep:?}");
+        assert!((rep.mesh.volume - rep.contour_volume).abs() / rep.contour_volume < 0.01, "{smoother:?}: {rep:?}");
+        let (again, _) = run(smoother, true);
+        assert_eq!(m, again, "{smoother:?}: the same input gives the same mesh");
+    }
+    // Without volume preservation the bilateral-normal pass is free to move the surface.
+    let (_, free) = run(Smoother::Taubin, false);
+    assert!(free.smoothed_volume != free.pinned_volume);
 }

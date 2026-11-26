@@ -31,7 +31,7 @@ def entry(name, params):
 
 
 def change(path, value):
-    key = "flag" if isinstance(value, bool) else "number"
+    key = "flag" if isinstance(value, bool) else "text" if isinstance(value, str) else "number"
     return entry("panel", {"panel": "topopt", "event": "change", "path": path, "row": None, "value": {key: value}})
 
 
@@ -63,6 +63,8 @@ part1 = [
     entry("add-load", {"faces": [face(6, [61.3, 24.83, 16.45])], "mode": "vector", "fx": 0, "fy": 0, "fz": -2000, "magnitude": 0, "case": 1}),
     change("/settings/max_iterations", iterations),
     change("/settings/use_solver", use_solver),
+    # Extra panel options as JSON, e.g. TOPOPT_E2E_OPTIONS='{"/mesh/upsample": 1}'.
+    *[change(k, v) for k, v in json.loads(os.environ.get("TOPOPT_E2E_OPTIONS", "{}")).items()],
     entry("optimize", {}),
 ]
 t0 = time.time()

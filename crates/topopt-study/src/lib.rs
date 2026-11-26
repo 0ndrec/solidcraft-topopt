@@ -13,9 +13,10 @@ pub mod solver;
 pub mod spec;
 pub mod status;
 pub mod study;
+pub mod trim;
 pub mod voxel;
 
-pub use study::{Condition, FaceRef, MATERIALS, Material, MeshSettings, RunResult, Settings, Study};
+pub use study::{Condition, FaceRef, MATERIALS, Material, MeshSettings, RunResult, SMOOTHERS, Settings, Study};
 pub use topopt_mesh::Mesh;
 pub use spec::{MeshCaster, Spec, prepare_spec};
 pub use voxel::{Caster, Hit};
@@ -39,6 +40,13 @@ pub struct Density {
     pub pads: Vec<bool>,
     /// Cells inside the design body (and outside keep-outs).
     pub inside: Vec<bool>,
+    /// The filtered densities, before the Heaviside projection (pads 1, outside 0). The surface
+    /// is made from these: the projection makes `values` nearly 0 or 1 per cell, so their iso
+    /// surface follows the voxels, while the filtered field varies smoothly and places the same
+    /// surface (the projection's threshold is the iso value) between the cell centres. Empty in
+    /// densities saved before it existed: then `values` are used.
+    #[serde(default)]
+    pub filtered: Vec<f32>,
 }
 
 pub struct Outcome {
@@ -177,11 +185,40 @@ pub fn solve(job: &Job, hooks: &mut dyn Hooks) -> Result<Outcome, String> {
     let inside: Vec<bool> = problem.kinds.iter().map(|k| *k != ElementKind::Void).collect();
     let pads: Vec<bool> = problem.kinds.iter().map(|k| *k == ElementKind::Solid).collect();
     let n_inside = inside.iter().filter(|&&i| i).count();
-    let density = Density { grid, values: opt.x_phys.iter().map(|&v| v as f32).collect(), pads, inside };
+    let filtered = (0..grid.nel())
+        .map(|e| match problem.kind(e) {
+            ElementKind::Solid => 1.0,
+            ElementKind::Void => 0.0,
+            ElementKind::Design => opt.x_filtered[e] as f32,
+        })
+        .collect();
+    let mut density = Density { grid, values: opt.x_phys.iter().map(|&v| v as f32).collect(), pads, inside, filtered };
+
+    // Thin pieces that add almost no stiffness, when asked for.
+    let mut trimmed = 0.0;
+    if study.mesh.trim_percent > 0.0 {
+        hooks.progress(0.88, "trimming dead weight");
+        let max_loss = study.mesh.trim_percent / 100.0;
+        let trim = trim::TrimSettings { max_loss, piece_loss: max_loss / 2.0, ..Default::default() };
+        let x: Vec<f64> = density.values.iter().map(|&v| v as f64).collect();
+        let (out, rep) = trim::trim_dead_ends(problem, &settings, &x, study.mesh.iso, &trim)?;
+        trim::apply(&mut density, &out);
+        trimmed = rep.removed_fraction;
+        if rep.removed_pieces > 0 {
+            warnings.push(format!(
+                "trimmed {} thin pieces ({:.1} % of the material) for {:.2} % of the stiffness",
+                rep.removed_pieces,
+                100.0 * rep.removed_fraction,
+                100.0 * (rep.compliance_after / rep.compliance_before - 1.0)
+            ));
+        }
+    }
 
     hooks.progress(0.9, "making the mesh");
     let surface = job.surface.as_ref().map(|(p, t)| (p.as_slice(), t.as_slice()));
-    let (mesh, mesh_report) = make_mesh(study, &density, surface)?;
+    let (mesh, full_report) = make_mesh(study, &density, surface)?;
+    warnings.extend(mesh_warnings(study, &full_report, surface.is_some()));
+    let mesh_report = full_report.mesh;
     let outcome_name = if stopped_by_time {
         "time limit"
     } else {
@@ -208,6 +245,7 @@ pub fn solve(job: &Job, hooks: &mut dyn Hooks) -> Result<Outcome, String> {
         stl: job.mesh_path.clone(),
         inserted: false,
         warnings,
+        trimmed,
     };
     hooks.progress(1.0, "done");
     Ok(Outcome { mesh, density, result })
@@ -231,13 +269,27 @@ fn body_volume(d: &Density) -> f64 {
     d.inside.iter().filter(|&&i| i).count() as f64 * d.grid.h.powi(3)
 }
 
-/// The mesh of a density field with the study's mesh settings.
-pub fn make_mesh(study: &Study, density: &Density, surface: Surface) -> Result<(Mesh, topopt_mesh::MeshReport), String> {
+/// The mesh of a density field with the study's mesh settings, and the mesher's report.
+pub fn make_mesh(study: &Study, density: &Density, surface: Surface) -> Result<(Mesh, topopt_mesh::Report), String> {
     let g = density.grid;
     let dims = [g.nx, g.ny, g.nz];
-    let values: Vec<f64> = density.values.iter().map(|&v| v as f64).collect();
-    let field = Field::from_cells(dims, g.h, g.origin, &values, 1);
-    let anchors = field.cell_mask(dims, 1, &density.pads);
+    // The filtered field when there is one (see `Density::filtered`), sampled `upsample` times
+    // finer by cubic interpolation: round members instead of faceted ones.
+    let source = if density.filtered.len() == density.values.len() { &density.filtered } else { &density.values };
+    let values: Vec<f64> = source.iter().map(|&v| v as f64).collect();
+    let k = study.mesh.upsample.clamp(1, 3);
+    let (fine, mut cells) = topopt_mesh::upsample_cells(dims, &values, k);
+    let inside = topopt_mesh::upsample_mask(dims, &density.inside, k);
+    let pads = topopt_mesh::upsample_mask(dims, &density.pads, k);
+    for (c, (&i, &p)) in cells.iter_mut().zip(inside.iter().zip(&pads)) {
+        if p {
+            *c = 1.0;
+        } else if !i {
+            *c = 0.0;
+        }
+    }
+    let field = Field::from_cells(fine, g.h / k as f64, g.origin, &cells, 1);
+    let anchors = field.cell_mask(fine, 1, &pads);
     let projector = match (study.mesh.keep_faces, surface) {
         (true, Some((p, t))) if !t.is_empty() => Some(Projector::new(p, t)?),
         _ => None,
@@ -250,8 +302,21 @@ pub fn make_mesh(study: &Study, density: &Density, surface: Surface) -> Result<(
         remove_islands: m.remove_islands,
         fill_cavities: m.fill_cavities,
         target_triangles: Some(triangles),
+        smoother: topopt_mesh::Smoother::parse(&m.smoother).unwrap_or_default(),
+        preserve_volume: m.preserve_volume,
+        sharp_edges: m.sharp_edges,
+        // The pinning band is in samples: keep it one *optimization* cell wide on a finer field.
+        pin_band: Options::default().pin_band * k as f64,
         ..Default::default()
     };
-    let (mesh, report) = extract(field, Some(&anchors), projector.as_ref(), &opts)?;
-    Ok((mesh, report.mesh))
+    extract(field, Some(&anchors), projector.as_ref(), &opts)
+}
+
+/// Warnings about a mesh made with the study's settings.
+pub fn mesh_warnings(study: &Study, report: &topopt_mesh::Report, surface_given: bool) -> Vec<String> {
+    let mut w = Vec::new();
+    if study.mesh.keep_faces && study.mesh.sharp_edges && surface_given && !report.sharp_edges {
+        w.push("the sharp edges could not be kept without the surface crossing itself; they are rounded".into());
+    }
+    w
 }

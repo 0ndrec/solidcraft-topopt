@@ -183,6 +183,70 @@ pub fn prepare(input: &Input, on_event: &mut dyn FnMut(&Event)) -> Result<Job, S
     }
 }
 
+/// What [`remesh`] made.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct RemeshReport {
+    pub triangles: usize,
+    pub vertices: usize,
+    pub volume_mm3: f64,
+    pub genus: i64,
+    /// Vertices kept on the original surface, on its sharp edges and on its corners.
+    pub pinned_vertices: usize,
+    pub edge_vertices: usize,
+    pub corner_vertices: usize,
+    pub sharp_edges: bool,
+    pub smooth_iterations: usize,
+    /// Dead ends trimmed before meshing (with `trim`).
+    pub trim: Option<topopt_study::trim::TrimReport>,
+    pub warnings: Vec<String>,
+}
+
+/// Makes the mesh again from saved densities (a `density.json` of an earlier run of the same
+/// input) with the input's mesh settings: tune the mesh without optimizing again. Dead weight is
+/// trimmed first when the input's `mesh.trim_percent` (or `trim_percent`, which overrides it) is
+/// above 0.
+pub fn remesh(input: &Input, density: &Density, trim_percent: Option<f64>) -> Result<(Mesh, RemeshReport), String> {
+    let job = prepare(input, &mut |_| {})?;
+    let g = &job.problem.grid;
+    if density.grid.nx != g.nx || density.grid.ny != g.ny || density.grid.nz != g.nz {
+        return Err(format!(
+            "the densities are on a {}×{}×{} grid, the input makes {}×{}×{}: they come from another study or settings",
+            density.grid.nx, density.grid.ny, density.grid.nz, g.nx, g.ny, g.nz
+        ));
+    }
+    let surface = job.surface.as_ref().map(|(p, t)| (p.as_slice(), t.as_slice()));
+    let mut density = density.clone();
+    let pct = trim_percent.unwrap_or(job.study.mesh.trim_percent);
+    let trim_report = if pct > 0.0 {
+        let mut settings = job.settings;
+        settings.mg = topopt_core::mg::MgSettings::default();
+        let max_loss = pct / 100.0;
+        let t = topopt_study::trim::TrimSettings { max_loss, piece_loss: max_loss / 2.0, ..Default::default() };
+        let x: Vec<f64> = density.values.iter().map(|&v| v as f64).collect();
+        let (trimmed, rep) = topopt_study::trim::trim_dead_ends(&job.problem, &settings, &x, job.study.mesh.iso, &t)?;
+        topopt_study::trim::apply(&mut density, &trimmed);
+        Some(rep)
+    } else {
+        None
+    };
+    let (mesh, r) = topopt_study::make_mesh(&job.study, &density, surface)?;
+    let warnings = topopt_study::mesh_warnings(&job.study, &r, surface.is_some());
+    let report = RemeshReport {
+        triangles: r.mesh.triangles,
+        vertices: r.mesh.vertices,
+        volume_mm3: r.mesh.volume,
+        genus: r.mesh.genus,
+        pinned_vertices: r.pinned_vertices,
+        edge_vertices: r.edge_vertices,
+        corner_vertices: r.corner_vertices,
+        sharp_edges: r.sharp_edges,
+        smooth_iterations: r.smooth_iterations,
+        trim: trim_report,
+        warnings,
+    };
+    Ok((mesh, report))
+}
+
 pub fn check(input: &Input) -> Result<CheckReport, String> {
     use topopt_core::ElementKind;
     let job = prepare(input, &mut |_| {})?;

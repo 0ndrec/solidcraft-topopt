@@ -39,6 +39,11 @@ pub struct MeshReport {
     /// Distinct vertices that become the same point once rounded to f32 (STL), which a reader
     /// that welds equal corners would merge.
     pub f32_collisions: usize,
+    /// Neighbouring triangles folded flat onto each other (normals more than 179.2° apart): a flap of
+    /// zero thickness lying in the surface. Not a crossing the intersection test sees, but CAD
+    /// kernels refuse it (SolidCraft's `mesh.convert`: "a planar group's boundary does not
+    /// enclose it").
+    pub folds: usize,
 }
 
 impl MeshReport {
@@ -52,6 +57,7 @@ impl MeshReport {
             && self.volume > 0.0
             && self.self_intersections.unwrap_or(0) == 0
             && self.f32_collisions == 0
+            && self.folds == 0
     }
 }
 
@@ -89,6 +95,34 @@ pub fn vertex_normals(m: &Mesh) -> Vec<[f64; 3]> {
 }
 
 /// Triangles with (near) zero area, relative to the mean edge length.
+/// Triangles of folded pairs: two triangles sharing an edge whose normals point (nearly) opposite
+/// ways (more than 179.2° apart), i.e. one lies folded back flat on the other. A sharp but open
+/// wedge, which marching tetrahedra can make on noisy fields, is not a fold. See
+/// [`MeshReport::folds`].
+pub fn folded_triangles(m: &Mesh) -> Vec<u32> {
+    let mut by_edge: HashMap<(u32, u32), Vec<u32>> = HashMap::with_capacity(m.triangles.len() * 2);
+    for (t, tri) in m.triangles.iter().enumerate() {
+        for e in 0..3 {
+            let (a, b) = (tri[e], tri[(e + 1) % 3]);
+            by_edge.entry((a.min(b), a.max(b))).or_default().push(t as u32);
+        }
+    }
+    let mut out = Vec::new();
+    let mut keys: Vec<_> = by_edge.keys().copied().collect();
+    keys.sort_unstable();
+    for k in keys {
+        if let [s, t] = by_edge[&k][..] {
+            let (n, q) = (m.face_normal(s as usize), m.face_normal(t as usize));
+            let (ln, lq) = (norm(n), norm(q));
+            if ln > 0.0 && lq > 0.0 && (n[0] * q[0] + n[1] * q[1] + n[2] * q[2]) / (ln * lq) < -0.9999 {
+                out.push(s);
+                out.push(t);
+            }
+        }
+    }
+    out
+}
+
 pub fn degenerate_triangles(m: &Mesh) -> Vec<u32> {
     let scale = m.mean_edge().max(1e-300);
     (0..m.triangles.len())
@@ -249,6 +283,7 @@ impl Mesh {
         if self_intersections {
             r.self_intersections = Some(crate::intersect::count_self_intersections(self));
         }
+        r.folds = folded_triangles(self).len() / 2;
         r
     }
 

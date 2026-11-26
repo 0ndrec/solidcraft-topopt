@@ -151,7 +151,10 @@ material = node({"form": {"bind": "/material", "fields": [
 mesh = node({"form": {"bind": "/mesh", "fields": [
     field("triangles", "Triangles (up to 50 000)", "number"),
     field("smoothing", "Smoothing passes", "number"),
+    field("smoother", "Smoother", "choice", ["Taubin", "HC (keeps volume)", "Bilateral (keeps creases)"]),
+    field("upsample", "Finer surface (1 = off, 2 = round members)", "number"),
     field("keep_faces", "Keep the body's faces exact", "toggle"),
+    field("sharp_edges", "Keep its sharp edges sharp", "toggle"),
     field("remove_islands", "Remove floating pieces", "toggle"),
     field("fill_cavities", "Fill closed cavities", "toggle"),
     field("convert_solid", "Create body makes a solid", "toggle")]}})
@@ -161,7 +164,9 @@ adv_settings = node({"form": {"bind": "/settings", "fields": [
     field("penal", "SIMP penalty", "number"),
     field("beta_max", "Final sharpness (beta)", "number"),
     field("move_limit", "Move limit per iteration", "number")]}})
-adv_mesh = node({"form": {"bind": "/mesh", "fields": [field("iso", "Surface density threshold", "number")]}})
+adv_mesh = node({"form": {"bind": "/mesh", "fields": [field("iso", "Surface density threshold", "number"),
+                                                    field("preserve_volume", "Keep the volume while smoothing", "toggle"),
+                                                    field("trim_percent", "Trim dead weight costing up to % stiffness (0 = off)", "number")]}})
 advanced = node({"group": [adv_settings, adv_mesh]})
 tabs = node({"tabs": [{"label": "Setup", "child": setup}, {"label": "Run", "child": run}, {"label": "Settings", "child": basic},
                       {"label": "Material", "child": material}, {"label": "Mesh", "child": mesh}, {"label": "Advanced", "child": advanced}]})
@@ -170,7 +175,7 @@ nodes[root] = {"widget": {"group": [next_row, tabs]}}
 manifest = {
     "id": "topopt",
     "name": "TopOpt",
-    "version": "0.6.0",
+    "version": "0.7.0",
     "description": "Topology optimization: pick a design body, supports and loads; get a lightweight, stiff part as a mesh or solid.",
     "capabilities": ["commands@0.2", "ui@0.1", "storage@0.1", "forms@0.1"],
     "runtime": {
