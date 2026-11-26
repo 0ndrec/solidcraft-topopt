@@ -152,3 +152,52 @@ pub fn voxelize(caster: &mut dyn Caster, grid: &Grid, mut progress: impl FnMut(f
     }
     Ok(Voxels { inside: votes.iter().map(|&v| v >= 2).collect(), hits, unbalanced_rays: unbalanced, calls })
 }
+
+/// The face each triangle of a body's surface mesh lies on: a ray from just outside the
+/// triangle's centroid, against its normal, names the face it meets (−1 where it meets none).
+/// `offset`: how far outside to start, more than the mesh's chord error (a centroid on a convex
+/// face lies that much inside the body).
+pub fn label_faces(caster: &mut dyn Caster, positions: &[[f64; 3]], triangles: &[[u32; 3]], offset: f64) -> Result<Vec<i64>, String> {
+    // Outward normals whatever the mesh's winding.
+    let volume: f64 = triangles
+        .iter()
+        .map(|t| {
+            let [a, b, c] = t.map(|v| positions[v as usize]);
+            (a[0] * (b[1] * c[2] - b[2] * c[1]) + a[1] * (b[2] * c[0] - b[0] * c[2]) + a[2] * (b[0] * c[1] - b[1] * c[0])) / 6.0
+        })
+        .sum();
+    let sign = if volume < 0.0 { -1.0 } else { 1.0 };
+    let rays: Vec<Option<([f64; 3], [f64; 3])>> = triangles
+        .iter()
+        .map(|t| {
+            let [a, b, c] = t.map(|v| positions[v as usize]);
+            let (u, w) = ([b[0] - a[0], b[1] - a[1], b[2] - a[2]], [c[0] - a[0], c[1] - a[1], c[2] - a[2]]);
+            let n = [u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]];
+            let l = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+            if l == 0.0 {
+                return None;
+            }
+            let n = n.map(|x| sign * x / l);
+            let g = [(a[0] + b[0] + c[0]) / 3.0, (a[1] + b[1] + c[1]) / 3.0, (a[2] + b[2] + c[2]) / 3.0];
+            Some(([g[0] + offset * n[0], g[1] + offset * n[1], g[2] + offset * n[2]], n.map(|x| -x)))
+        })
+        .collect();
+    let valid: Vec<usize> = (0..rays.len()).filter(|&i| rays[i].is_some()).collect();
+    let mut faces = vec![-1; triangles.len()];
+    for chunk in valid.chunks(1024) {
+        let batch: Vec<([f64; 3], [f64; 3])> = chunk.iter().map(|&i| rays[i].unwrap()).collect();
+        let hits = caster.cast(&batch)?;
+        for (&i, hit) in chunk.iter().zip(hits) {
+            if let Some(hit) = hit {
+                // Only a hit about where the triangle is: a ray that slipped past an edge and met
+                // another part of the body says nothing.
+                let (o, _) = rays[i].unwrap();
+                let d = ((hit.point[0] - o[0]).powi(2) + (hit.point[1] - o[1]).powi(2) + (hit.point[2] - o[2]).powi(2)).sqrt();
+                if d <= 3.0 * offset {
+                    faces[i] = hit.face;
+                }
+            }
+        }
+    }
+    Ok(faces)
+}

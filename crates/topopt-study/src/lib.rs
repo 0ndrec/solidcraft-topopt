@@ -19,7 +19,7 @@ pub mod voxel;
 pub use study::{Condition, FaceRef, MATERIALS, Material, MeshSettings, RunResult, SMOOTHERS, Settings, Study};
 pub use topopt_mesh::Mesh;
 pub use spec::{MeshCaster, Spec, prepare_spec};
-pub use voxel::{Caster, Hit};
+pub use voxel::{Caster, Hit, label_faces};
 
 use serde::{Deserialize, Serialize};
 use topopt_core::{ElementKind, Grid, Optimizer, Problem};
@@ -73,8 +73,27 @@ pub struct BodyInfo {
     pub volume: f64,
 }
 
-/// The original surface for pinning: positions and triangles (world mm).
-pub type Surface<'a> = Option<(&'a [[f64; 3]], &'a [[u32; 3]])>;
+/// The original surface: positions and triangles (world mm), and the face (`model.faces` index)
+/// each triangle lies on, from [`voxel::label_faces`] (empty when unknown).
+#[derive(Clone, Copy, Debug)]
+pub struct SurfaceRef<'a> {
+    pub positions: &'a [[f64; 3]],
+    pub triangles: &'a [[u32; 3]],
+    pub faces: &'a [i64],
+}
+
+impl<'a> SurfaceRef<'a> {
+    pub fn new(positions: &'a [[f64; 3]], triangles: &'a [[u32; 3]]) -> Self {
+        SurfaceRef { positions, triangles, faces: &[] }
+    }
+
+    pub fn with_faces(self, faces: &'a [i64]) -> Self {
+        SurfaceRef { faces, ..self }
+    }
+}
+
+/// The original surface for pinning and for grafting kept faces, when there is one.
+pub type Surface<'a> = Option<SurfaceRef<'a>>;
 
 /// Everything [`solve`] needs, independent of the CAD app: what the plugin hands to the solver.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -93,6 +112,15 @@ pub struct Job {
     /// Cells under kept surfaces (see [`Density::kept`]); empty when there are none.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub kept: Vec<bool>,
+    /// The face of each triangle of `surface` (see [`SurfaceRef::faces`]); empty when unknown.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub surface_faces: Vec<i64>,
+}
+
+impl Job {
+    pub fn surface(&self) -> Surface<'_> {
+        self.surface.as_ref().map(|(p, t)| SurfaceRef::new(p, t).with_faces(&self.surface_faces))
+    }
 }
 
 pub const JOB_VERSION: u32 = 1;
@@ -161,9 +189,10 @@ pub(crate) fn finish_job(study: &Study, body: BodyInfo, problem: Problem, mut wa
         problem,
         settings,
         warnings,
-        surface: surface.map(|(p, t)| (p.to_vec(), t.to_vec())),
+        surface: surface.map(|s| (s.positions.to_vec(), s.triangles.to_vec())),
         mesh_path: String::new(),
         kept: Vec::new(),
+        surface_faces: surface.map(|s| s.faces.to_vec()).unwrap_or_default(),
     })
 }
 
@@ -237,7 +266,7 @@ pub fn solve(job: &Job, hooks: &mut dyn Hooks) -> Result<Outcome, String> {
     }
 
     hooks.progress(0.9, "making the mesh");
-    let surface = job.surface.as_ref().map(|(p, t)| (p.as_slice(), t.as_slice()));
+    let surface = job.surface();
     let (mesh, full_report) = make_mesh(study, &density, surface)?;
     warnings.extend(mesh_warnings(study, &full_report, surface.is_some()));
     let mesh_report = full_report.mesh;
@@ -323,7 +352,7 @@ pub fn make_mesh(study: &Study, density: &Density, surface: Surface) -> Result<(
     let frozen = (density.kept.len() == values.len() && density.kept.iter().any(|&f| f))
         .then(|| field.cell_mask(fine, 1, &topopt_mesh::upsample_mask(dims, &density.kept, k)));
     let projector = match (study.pins_faces(), surface) {
-        (true, Some((p, t))) if !t.is_empty() => Some(Projector::new(p, t)?),
+        (true, Some(s)) if !s.triangles.is_empty() => Some(Projector::new(s.positions, s.triangles)?),
         _ => None,
     };
     let m = &study.mesh;
@@ -341,7 +370,25 @@ pub fn make_mesh(study: &Study, density: &Density, surface: Surface) -> Result<(
         pin_band: Options::default().pin_band * k as f64,
         ..Default::default()
     };
-    topopt_mesh::extract_with(field, Some(&anchors), frozen.as_deref(), projector.as_ref(), &opts)
+    let h = field.h;
+    let (mut mesh, mut report) = topopt_mesh::extract_with(field, Some(&anchors), frozen.as_deref(), projector.as_ref(), &opts)?;
+    // Kept faces exactly as the CAD model has them: its own triangles there, stitched in.
+    let kept_faces: Vec<i64> = study
+        .conditions
+        .iter()
+        .filter(|c| matches!(c, Condition::Keep { .. }))
+        .flat_map(|c| c.faces().iter().map(|f| f.index))
+        .collect();
+    if let Some(s) = surface.filter(|s| !kept_faces.is_empty() && s.faces.len() == s.triangles.len() && !s.triangles.is_empty()) {
+        let keep: Vec<bool> = s.faces.iter().map(|f| kept_faces.contains(f)).collect();
+        let (grafted, g) = topopt_mesh::graft_kept_faces(&mesh, (s.positions, s.triangles), &keep, h, opts.check_self_intersections);
+        if g.grafted > 0 {
+            mesh = grafted;
+            report.mesh = mesh.validate(opts.check_self_intersections);
+        }
+        report.graft = g;
+    }
+    Ok((mesh, report))
 }
 
 /// Warnings about a mesh made with the study's settings.
@@ -349,6 +396,15 @@ pub fn mesh_warnings(study: &Study, report: &topopt_mesh::Report, surface_given:
     let mut w = Vec::new();
     if study.pins_faces() && study.mesh.sharp_edges && surface_given && !report.sharp_edges {
         w.push("the sharp edges could not be kept without the surface crossing itself; they are rounded".into());
+    }
+    let g = &report.graft;
+    if g.patches > g.grafted {
+        w.push(format!(
+            "{} of {} kept surfaces could not take the CAD model's own triangles and are approximated ({})",
+            g.patches - g.grafted,
+            g.patches,
+            g.failures.join("; ")
+        ));
     }
     w
 }

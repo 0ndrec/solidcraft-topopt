@@ -330,19 +330,41 @@ fn body_info(body: &str) -> Result<BodyInfo, PluginError> {
     Ok(BodyInfo { lo, hi, volume: b["volume_mm3"].as_f64().unwrap_or(0.0) })
 }
 
-/// The body's surface for keeping faces, coarser when the body is too detailed for `model.mesh`.
-fn surface(body: &str) -> Option<(Vec<[f64; 3]>, Vec<[u32; 3]>)> {
+/// The body's surface: positions, triangles, and (when the study keeps surfaces) the face each
+/// triangle lies on. Coarser when the body is too detailed for `model.mesh`.
+struct BodySurface {
+    positions: Vec<[f64; 3]>,
+    triangles: Vec<[u32; 3]>,
+    faces: Vec<i64>,
+}
+
+impl BodySurface {
+    fn as_ref(&self) -> topopt_study::SurfaceRef<'_> {
+        topopt_study::SurfaceRef::new(&self.positions, &self.triangles).with_faces(&self.faces)
+    }
+}
+
+fn surface(body: &str, study: &Study) -> Option<BodySurface> {
     for tol in [0.05, 0.2, 0.5, 2.0] {
         if let Ok(m) = run("model.mesh", json!({"body": body, "tolerance": tol})) {
-            let p: Vec<[f64; 3]> = m["positions"].as_array()?.iter().filter_map(vec3).collect();
-            let t: Vec<[u32; 3]> = m["triangles"]
+            let positions: Vec<[f64; 3]> = m["positions"].as_array()?.iter().filter_map(vec3).collect();
+            let triangles: Vec<[u32; 3]> = m["triangles"]
                 .as_array()?
                 .iter()
                 .filter_map(|t| Some([t.get(0)?.as_u64()? as u32, t.get(1)?.as_u64()? as u32, t.get(2)?.as_u64()? as u32]))
                 .collect();
-            if !t.is_empty() {
-                return Some((p, t));
+            if triangles.is_empty() {
+                continue;
             }
+            // Kept surfaces take these triangles as they are: which face is each on? A ray from
+            // just outside (beyond the chord error) says.
+            let faces = if study.conditions.iter().any(|c| matches!(c, Condition::Keep { .. })) {
+                let mut caster = PickCaster { body: body.to_string() };
+                topopt_study::label_faces(&mut caster, &positions, &triangles, 2.0 * tol + 0.01).unwrap_or_default()
+            } else {
+                Vec::new()
+            };
+            return Some(BodySurface { positions, triangles, faces });
         }
     }
     None
@@ -431,11 +453,11 @@ fn optimize() -> Result<Value, PluginError> {
     let mut hooks = JobHooks { start: clock::now() };
     control::progress(0.0, "reading the design body");
     let info = body_info(&body)?;
-    let surf = if study.pins_faces() { surface(&body) } else { None };
+    let surf = if study.pins_faces() { surface(&body, &study) } else { None };
     let mut design = PickCaster { body: body.clone() };
     let mut outs: Vec<PickCaster> = study.keep_out.iter().map(|b| PickCaster { body: b.clone() }).collect();
     let mut out_refs: Vec<&mut dyn Caster> = outs.iter_mut().map(|c| c as &mut dyn Caster).collect();
-    let surface_ref = surf.as_ref().map(|(p, t)| (p.as_slice(), t.as_slice()));
+    let surface_ref = surf.as_ref().map(|s| s.as_ref());
     let mut job = topopt_study::prepare(&study, info, &mut design, &mut out_refs, surface_ref, &mut hooks).map_err(|e| invalid("optimize", e))?;
     let path = mesh_path(&body);
     let alive = if study.settings.use_solver { read_alive() } else { None };
@@ -480,9 +502,9 @@ fn remesh() -> Result<Value, PluginError> {
     control::progress(0.0, "reading the optimized densities");
     let density = load_density()?;
     let info = body_info(&body)?;
-    let surf = if study.pins_faces() { surface(&body) } else { None };
+    let surf = if study.pins_faces() { surface(&body, &study) } else { None };
     control::progress(0.3, "making the mesh");
-    let surface_ref = surf.as_ref().map(|(p, t)| (p.as_slice(), t.as_slice()));
+    let surface_ref = surf.as_ref().map(|s| s.as_ref());
     let (mesh, full) = topopt_study::make_mesh(&study, &density, surface_ref).map_err(|e| invalid("mesh", e))?;
     let report = &full.mesh;
     let path = mesh_path(&body);

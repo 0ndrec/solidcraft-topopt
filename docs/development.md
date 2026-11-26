@@ -146,6 +146,7 @@ Driving the app from an agent over MCP:
 | No `user-storage@0.1` in 0.49.1 | Delete by number, or through a row's double-click |
 | No underscores in entry names | `design-body`, `add-support`… |
 | `model.mesh` ≤ 8192 vertices / 16384 triangles | The pinning surface is requested at 0.05 mm tolerance, then coarser (0.2, 0.5, 2 mm) until it fits |
+| `model.mesh` has no face numbers | With kept faces, one `view.pick` ray per triangle (from just outside its centroid, against its normal) names its face: at most 16 calls of 1024 rays |
 
 ## How to add…
 
@@ -157,6 +158,6 @@ Driving the app from an agent over MCP:
 
 ## Versions
 
-- Plugin: the manifest version (0.9.0).
+- Plugin: the manifest version (0.10.0).
 - Crates and solver: the workspace `version` (0.1.0); the solver reports it in its heartbeat, `version` and the `started` event.
 - Plugin ↔ solver protocol: `PROTOCOL = 1`; job format: `JOB_VERSION = 1`.

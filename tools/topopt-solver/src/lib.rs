@@ -245,7 +245,7 @@ pub fn remesh_with(input: &Input, density: &Density, trim_percent: Option<f64>, 
             density.grid.nx, density.grid.ny, density.grid.nz, g.nx, g.ny, g.nz
         ));
     }
-    let surface = job.surface.as_ref().map(|(p, t)| (p.as_slice(), t.as_slice()));
+    let surface = job.surface();
     let mut density = density.clone();
     let pct = trim_percent.unwrap_or(job.study.mesh.trim_percent);
     let trim_report = if pct > 0.0 {

@@ -361,7 +361,7 @@ pub fn prepare_spec(spec: &Spec, read: &dyn Fn(&str) -> Result<Vec<u8>, String>,
         mesh: spec.mesh.clone(),
         ..Default::default()
     };
-    crate::finish_job(&study, body, problem, warnings, Some((&domain.positions, &domain.triangles)))
+    crate::finish_job(&study, body, problem, warnings, Some(crate::SurfaceRef::new(&domain.positions, &domain.triangles)))
 }
 
 /// Supports, loads and pads on the grid from the spec's regions.

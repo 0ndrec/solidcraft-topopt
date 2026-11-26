@@ -22,7 +22,7 @@ Spec         │ shape_mesh → voxelize(MeshCaster) → assemble → Job │   
              └────────────────── prepare_spec ────────────────────┘
 ```
 
-`Job` is the boundary. It serializes to JSON and holds everything `solve` needs: the study, the body's box and volume, the `Problem` with element kinds, the core settings, warnings, the original surface for vertex pinning and the mesh path. The plugin runs `prepare` itself, as only it can cast rays at the model; `solve` runs either in the plugin or in TopOpt Solver.
+`Job` is the boundary. It serializes to JSON and holds everything `solve` needs: the study, the body's box and volume, the `Problem` with element kinds, the core settings, warnings, the original surface for vertex pinning (with `surface_faces`, the face of each of its triangles, when the study keeps faces) and the mesh path. A surface is passed as `Surface = Option<SurfaceRef { positions, triangles, faces }>` (`faces` empty when unknown); `Job::surface()` gives it. The plugin runs `prepare` itself, as only it can cast rays at the model; `solve` runs either in the plugin or in TopOpt Solver.
 
 ## API
 
@@ -34,8 +34,9 @@ Spec         │ shape_mesh → voxelize(MeshCaster) → assemble → Job │   
 | `prepare_spec(spec, read_file, hooks) -> Job` | The same from a spec; `read_file(path)` returns a file's bytes (STL), so the caller decides where files come from |
 | `solve(job, hooks) -> Outcome { mesh, density, result }` | Optimize and mesh. Multigrid settings are the defaults **of the platform it runs on**, not taken from the job |
 | `run(...)` | `prepare` + `solve` in one call |
-| `make_mesh(study, density, surface) -> (Mesh, topopt_mesh::Report)` | Only the mesh, from saved densities (Re-mesh), with the study's mesh settings (smoother, upsampling, volume, sharp edges…). It meshes `Density::filtered` (the densities before projection) when present, sampled `mesh.upsample` times finer, and rounds the joints between the optimized material and the pads with fillets (`mesh.fillets`, `mesh.fillet_radius`) |
-| `mesh_warnings(study, report, surface_given)` | Warnings to show about such a mesh (sharp edges that had to be rounded) |
+| `make_mesh(study, density, surface) -> (Mesh, topopt_mesh::Report)` | Only the mesh, from saved densities (Re-mesh), with the study's mesh settings (smoother, upsampling, volume, sharp edges…). It meshes `Density::filtered` (the densities before projection) when present, sampled `mesh.upsample` times finer, and rounds the joints between the optimized material and the pads with fillets (`mesh.fillets`, `mesh.fillet_radius`). When the surface's triangles carry face numbers, kept faces are then replaced by the surface's own triangles (`topopt_mesh::graft_kept_faces`; `Report::graft`) |
+| `label_faces(caster, positions, triangles, offset) -> Vec<i64>` | The face each surface triangle lies on: a ray from `offset` outside its centroid, against its normal (−1 where it meets nothing near) |
+| `mesh_warnings(study, report, surface_given)` | Warnings to show about such a mesh (sharp edges that had to be rounded, kept faces that could not be grafted) |
 
 ### `Hooks`
 

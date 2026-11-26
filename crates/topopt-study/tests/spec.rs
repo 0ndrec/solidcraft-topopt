@@ -103,7 +103,7 @@ fn the_filtered_field_is_kept_and_meshed_finer() {
             assert_eq!(d.filtered[e], 0.0);
         }
     }
-    let surface = job.surface.as_ref().map(|(p, t)| (p.as_slice(), t.as_slice()));
+    let surface = job.surface();
     // Upsampled ×2 (the default) and not: both valid; densities saved without the filtered field
     // still mesh (from the projected values).
     let mut coarse = job.study.clone();
@@ -127,7 +127,7 @@ fn fillets_only_add_material_at_the_joints() {
     let spec = small();
     let job = prepare_spec(&spec, &no_files, &mut Quiet).unwrap();
     let out = solve(&job, &mut Quiet).unwrap();
-    let surface = job.surface.as_ref().map(|(p, t)| (p.as_slice(), t.as_slice()));
+    let surface = job.surface();
     let mut plain = job.study.clone();
     plain.mesh.fillets = false;
     let mut big = job.study.clone();

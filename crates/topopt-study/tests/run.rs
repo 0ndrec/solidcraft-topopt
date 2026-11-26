@@ -4,7 +4,7 @@ use parry3d_f64::math::Vector;
 use parry3d_f64::query::{PointQuery, Ray, RayCast};
 use parry3d_f64::shape::TriMesh;
 use topopt_study::voxel::{plan_grid, voxelize};
-use topopt_study::{BodyInfo, Caster, Condition, FaceRef, Hit, Hooks, Study, run};
+use topopt_study::{BodyInfo, Caster, Condition, FaceRef, Hit, Hooks, Study, SurfaceRef, label_faces, run};
 
 /// A box as a triangle mesh whose faces are numbered like a CAD body's:
 /// 0 −z, 1 +z, 2 −y, 3 +x, 4 +y, 5 −x (two triangles each).
@@ -96,7 +96,7 @@ fn bracket_study_runs_end_to_end() {
     study.add(Condition::Load { id: 0, faces: vec![face(3)], mode: "vector".into(), force: [0.0, 0.0, -1000.0], magnitude: 0.0, case: 1 }, None);
     let surface = (part.positions.clone(), part.triangles.clone());
     let info = BodyInfo { lo: [0.0; 3], hi: [80.0, 40.0, 20.0], volume: 64_000.0 };
-    let out = run(&study, info, &mut part, &mut [], Some((&surface.0, &surface.1)), &mut Quiet).unwrap();
+    let out = run(&study, info, &mut part, &mut [], Some(SurfaceRef::new(&surface.0, &surface.1)), &mut Quiet).unwrap();
     let r = &out.result;
     println!("{r:?}");
     assert!(out.mesh.validate(true).ok());
@@ -152,7 +152,9 @@ fn a_kept_surface_stays_whole_and_exact() {
     let solve = |study: &Study| {
         let mut part = BoxPart::new([0.0, 0.0, 0.0], [80.0, 40.0, 20.0]);
         let surface = (part.positions.clone(), part.triangles.clone());
-        run(study, info, &mut part, &mut [], Some((&surface.0, &surface.1)), &mut Quiet).unwrap()
+        let faces = label_faces(&mut part, &surface.0, &surface.1, 0.05).unwrap();
+        assert_eq!(faces, vec![0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5]);
+        run(study, info, &mut part, &mut [], Some(SurfaceRef::new(&surface.0, &surface.1).with_faces(&faces)), &mut Quiet).unwrap()
     };
     // The +y side (face 4, 80 × 20 mm) of the plain optimization has openings.
     let plain = solve(&study);
@@ -196,9 +198,11 @@ fn a_kept_surface_stays_whole_and_exact() {
         }
     }
     println!("face to mesh: worst {:.4} mm at x {} z {}; {over} of {total} points over 0.01 mm, {nx} of them more than 1 mm from an edge", worst.0, worst.1[0], worst.1[1]);
-    assert_eq!(nx, 0, "the kept face moved away from its edges");
-    assert!(worst.0 < 0.15, "the kept face moved {} mm", worst.0);
-    assert!(exact > 0.95 * 1600.0, "exactly in the plane: {exact}");
+    println!("graft: {:?}", out.result.warnings);
+    // The CAD model's own triangles there: the whole face, exactly, up to its edges and corners.
+    assert_eq!(over, 0, "the kept face moved");
+    assert!(worst.0 < 1e-9, "the kept face moved {} mm", worst.0);
+    assert!((exact - 1600.0).abs() < 1e-6, "exactly in the plane: {exact}");
     assert!(open < 0.9 * 1600.0, "the plain optimization left the face whole ({open}): the test proves nothing");
     assert!(beyond <= 40.0 + 1e-9, "the kept face moved outward to y = {beyond}");
 }

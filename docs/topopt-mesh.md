@@ -38,6 +38,17 @@ assert!(report.mesh.ok());
 std::fs::write("part.stl", mesh.to_stl("topopt"))?;
 ```
 
+## Kept faces from the CAD model: `graft`
+
+`graft_kept_faces(mesh, (positions, triangles), keep, h, check) -> (Mesh, GraftReport)` replaces the result's triangles on chosen triangles of the original surface (`keep`, one flag per triangle; `topopt-study` flags those whose face is kept) by those very triangles, so kept faces are exactly the CAD model's tessellation. For each group of kept triangles joined by edges (a **patch**):
+1. **cut**: a vertex of the result is covered when it lies on a kept triangle (within `0.25 h`; exactly on it whatever its normal, nearer than that only on its outer side) and not on the patch's outline. Every triangle with a covered vertex or centroid goes, and so does a triangle that juts into the cut with two of its edges (a large triangle left by decimation would otherwise lie across the bridge);
+2. **insert** the patch's triangles; each loop of the cut is matched to the nearest loop of the patch's outline (one to one, within 1.5 h);
+3. **weld**: cut vertices within `0.02 h` of the outline (the crease vertices that pinning put on sharp edges) become outline vertices: the outline is split where one lands, or its own vertex is taken if it is that close. Only welds that run once back along the outline are kept, so they come in order;
+4. **bridge** between consecutive welds: an edge of the cut that runs along the outline is split at the outline's vertices. Any other gap is **ear-clipped** in its best-fit plane (the direction of least spread of its points; the gap lies in the neighbouring face) when it is within one sample spacing of flat, the best-shaped ear first, which cannot lay triangles over each other. Otherwise a **ladder** joins the two chains: each cut vertex gets a foot on the outline, and neighbouring rungs are joined by two triangles;
+5. **check**: the whole mesh is validated (closed, manifold, oriented, no crossings or folds).
+
+All patches are grafted at once; if that fails, ladders are tried instead of ear clipping, then each patch alone, keeping those that pass. A patch that cannot be grafted stays as it was, and `GraftReport::failures` says why. `extract` does not graft; `topopt-study`'s `make_mesh` does, after it, when the surface's triangles carry face numbers.
+
 ## Finer fields: `upsample_cells`
 
 `upsample_cells(dims, cells, k)` resamples a cell field `k` times finer along each axis (cell-centred) by separable cubic (Catmull-Rom) interpolation, clamped to 0…1; `upsample_mask` does the same for per-cell flags (each fine cell takes its coarse cell's flag). Contouring the finer field gives round members where the coarse one gives faceted ones: between two samples the surface follows a cubic instead of a straight line. ![Struts of a bridge meshed from the projected densities (left) and from the filtered densities sampled ×2 with bilateral smoothing (right)](images/smooth-struts.png)

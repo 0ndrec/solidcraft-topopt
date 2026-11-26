@@ -16,10 +16,14 @@
 //! 5. **decimate** ([`decimate`]): QEM with manifold and flip guards, to a triangle budget, keeping
 //!    corner and edge pins over face pins;
 //! 6. **validate** ([`mesh::Mesh::validate`]): every guarantee checked, not assumed.
+//!
+//! Then, separately, [`graft_kept_faces`] can replace the result on chosen faces of the original
+//! surface by that surface's own triangles ([`graft`]).
 
 pub mod blend;
 pub mod decimate;
 pub mod field;
+pub mod graft;
 mod intersect;
 pub mod io;
 pub mod mesh;
@@ -29,6 +33,7 @@ pub mod smooth;
 pub use blend::{BlendReport, round_joints, round_union, signed_distance};
 pub use decimate::{DecimateOptions, decimate, decimate_ranked};
 pub use field::{Cleanup, Field, clean_components, upsample_cells, upsample_mask};
+pub use graft::{GraftReport, graft_kept_faces};
 pub use io::{read_ply, read_stl};
 pub use mesh::{Mesh, MeshReport};
 pub use mt::marching_tetrahedra;
@@ -122,6 +127,9 @@ pub struct Report {
     pub decimated_from: usize,
     pub collapses: usize,
     pub mesh: MeshReport,
+    /// Kept faces replaced by the original surface's own triangles ([`graft_kept_faces`]; not run
+    /// by [`extract`] itself).
+    pub graft: GraftReport,
 }
 
 /// How a vertex is held during smoothing (ordered: a higher kind wins in decimation).

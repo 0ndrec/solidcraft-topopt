@@ -86,7 +86,7 @@ fn job_round_trip_through_the_folder() {
     study.add(Condition::Load { id: 0, faces: vec![face(3)], mode: "vector".into(), force: [0.0, 0.0, -1000.0], magnitude: 0.0, case: 1 }, None);
     let info = BodyInfo { lo: [0.0; 3], hi: [80.0, 40.0, 20.0], volume: 64_000.0 };
     let surface = (part.positions.clone(), part.triangles.clone());
-    let mut job = prepare(&study, info, &mut part, &mut [], Some((&surface.0, &surface.1)), &mut Quiet).unwrap();
+    let mut job = prepare(&study, info, &mut part, &mut [], Some(topopt_study::SurfaceRef::new(&surface.0, &surface.1)), &mut Quiet).unwrap();
     job.id = "j1".into();
     job.mesh_path = "topopt/Block.ply".into();
 

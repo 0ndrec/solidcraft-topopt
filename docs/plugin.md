@@ -1,6 +1,6 @@
 # The TopOpt plugin for SolidCraft — user guide
 
-The TopOpt plugin (v0.9.0, SolidCraft 0.49.1 and 0.50) does **topology optimization** in your model. You say where material may go, where the part is held and where it is pushed; the plugin finds the stiffest shape from the share of material you allow and inserts it into the model as a body.
+The TopOpt plugin (v0.10.0, SolidCraft 0.49.1 and 0.50) does **topology optimization** in your model. You say where material may go, where the part is held and where it is pushed; the plugin finds the stiffest shape from the share of material you allow and inserts it into the model as a body.
 
 ![The TopOpt panel and ribbon in SolidCraft](images/solidcraft-panel.png)
 
@@ -57,11 +57,13 @@ Pick the faces the force acts on; it is spread evenly over them.
 
 Pick faces that have to stay exactly as they are: mating, sealing, sliding or visible faces, which neither the optimization nor the mesh may touch. For each kept surface:
 - a solid layer under the faces is taken out of the optimization. It is **Solid depth** mm deep, or the pad thickness (about 1.5 elements) with 0. Like the pads under supports and loads, it counts towards the volume target;
-- the result's surface there is pinned to the original faces, even with **Keep the body's faces exact** off. Smoothing and fillets do not move it, mesh simplification does not tilt it, and nothing grows out of the body.
+- the result's surface there is **the CAD model's own triangles** of those faces (the body's tessellation from SolidCraft), stitched watertight to the rest of the part. The optimization, smoothing, fillets and mesh simplification do not touch them, and nothing grows out of the body.
 
 A kept surface holds nothing and carries no force: it only keeps the shape. To also hold the face, add a support on it.
 
-Accuracy: inside a kept face the mesh lies exactly on it, and nothing sticks out of it. Its edges, where it meets faces that are not kept, can be rounded over a strip up to about half an element wide. On the test bracket with 1.7 mm elements, 2 % of the face moved more than 0.1 mm, all within 0.75 mm of the edges, and at most 0.74 mm, in a corner. Smaller elements make that strip narrower. The mesh is not simplified next to kept faces, so it can have more triangles than the budget.
+Accuracy: a kept face is the body's tessellation itself, up to its edges and corners: a hole stays a round hole however coarse the elements are. On an L-bracket with 1 mm elements and every face but four kept (Ø3 and Ø20 holes among them), no point of the kept faces was off the CAD faces. Version 0.9.0, which pinned the optimization's own mesh to them, had 26 % of them off, the worst by 0.24 mm, with ragged hole rims. Curved faces are as smooth as the tessellation: 0.05 mm chord error, coarser on a body too detailed for one `model.mesh` call.
+
+How it works: the plugin reads the body's tessellation and asks SolidCraft which face each triangle lies on (one `view.pick` ray per triangle). After the mesh is made, its triangles on the kept faces are cut out and the original triangles go in. Where the mesh already meets a kept face's edge, the two are welded vertex to vertex; elsewhere the gap between them is filled with a strip of triangles in the neighbouring face. If a group of kept faces cannot be stitched (the check finds an open edge, a crossing or a fold), that group stays as the optimization made it, pinned to the faces, and the result's warnings say so.
 
 The table on the **Setup** tab lists the supports, loads and kept surfaces. **Double-click** a row to open its dialog and change or delete it. **Delete…** removes an item by number; **Clear all** removes them all.
 
