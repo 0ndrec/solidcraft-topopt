@@ -1,0 +1,14 @@
+[package]
+name = "topopt-mesh"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "Density field to a watertight, 2-manifold, outward-oriented triangle mesh: cleanup, marching tetrahedra, constrained Taubin smoothing, QEM decimation, validation, STL."
+
+[dependencies]
+parry3d-f64 = "0.31.1"
+
+[dev-dependencies]
+topopt-core = { path = "../topopt-core" }

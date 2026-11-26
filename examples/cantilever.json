@@ -1,0 +1,8 @@
+{
+  "name": "cantilever",
+  "domain": { "box": { "min": [0, 0, 0], "max": [160, 60, 60] } },
+  "material": { "preset": "aluminium-6061" },
+  "settings": { "volfrac": 0.15, "max_elements": 80000, "max_iterations": 200 },
+  "supports": [ { "region": { "plane": { "point": [0, 0, 0], "normal": [1, 0, 0] } } } ],
+  "loads": [ { "region": { "box": { "min": [160, 0, 0], "max": [160, 60, 0] } }, "force": [0, 0, -1000] } ]
+}

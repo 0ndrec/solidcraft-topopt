@@ -1,0 +1,89 @@
+//! Specs: studies described without a CAD app.
+
+use topopt_core::ElementKind;
+use topopt_study::spec::{LoadSpec, Region, Shape, Spec, SupportSpec, box_mesh};
+use topopt_study::{Hooks, prepare_spec, solve};
+
+struct Quiet;
+impl Hooks for Quiet {
+    fn progress(&mut self, _: f32, _: &str) {}
+    fn cancelled(&mut self) -> bool {
+        false
+    }
+    fn elapsed(&mut self) -> f64 {
+        0.0
+    }
+}
+
+fn no_files(path: &str) -> Result<Vec<u8>, String> {
+    Err(format!("no file {path}"))
+}
+
+fn small() -> Spec {
+    let mut s = Spec::example();
+    s.settings.max_elements = 4000;
+    s.settings.max_iterations = 15;
+    s.mesh.triangles = 3000;
+    s
+}
+
+#[test]
+fn example_spec_solves() {
+    let spec = small();
+    let job = prepare_spec(&spec, &no_files, &mut Quiet).unwrap();
+    let p = &job.problem;
+    assert!(!p.supports.is_empty());
+    let total: f64 = p.load_cases[0].forces.iter().map(|f| f.f[2]).sum();
+    assert!((total + 1000.0).abs() < 1e-6, "{total}");
+    // Every support node is at x ≈ 0 (the plane region), within the default tolerance.
+    let h = p.grid.h;
+    assert!(p.supports.iter().all(|s| p.grid.node_pos(s.node)[0].abs() <= 0.6 * h + 1e-9));
+    let out = solve(&job, &mut Quiet).unwrap();
+    assert!(out.mesh.validate(true).ok());
+    assert!(out.result.volume_fraction > 0.1 && out.result.volume_fraction < 0.4, "{:?}", out.result);
+    // JSON round trip of the spec format.
+    let text = serde_json::to_string_pretty(&spec).unwrap();
+    assert_eq!(serde_json::from_str::<Spec>(&text).unwrap(), spec);
+}
+
+#[test]
+fn box_mesh_and_stl_domains_voxelize_alike() {
+    let base = small();
+    let kinds = |spec: &Spec, read: &dyn Fn(&str) -> Result<Vec<u8>, String>| prepare_spec(spec, read, &mut Quiet).unwrap().problem.kinds;
+    let a = kinds(&base, &no_files);
+    let m = box_mesh([0.0, 0.0, 0.0], [120.0, 40.0, 40.0]);
+    let mut as_mesh = base.clone();
+    as_mesh.domain = Shape::Mesh { positions: m.positions.clone(), triangles: m.triangles.clone() };
+    assert_eq!(a, kinds(&as_mesh, &no_files));
+    // The same box as an STL in metres.
+    let mut metres = m.clone();
+    metres.positions.iter_mut().for_each(|p| *p = p.map(|c| c / 1000.0));
+    let stl = metres.to_stl("box");
+    let mut as_stl = base.clone();
+    as_stl.domain = Shape::Stl { path: "box.stl".into(), scale: 1000.0 };
+    let read = move |p: &str| if p == "box.stl" { Ok(stl.clone()) } else { Err(p.to_string()) };
+    let b = kinds(&as_stl, &read);
+    let diff = a.iter().zip(&b).filter(|(x, y)| x != y).count();
+    assert!(diff <= a.len() / 200, "{diff} of {} cells differ", a.len());
+}
+
+#[test]
+fn keep_out_and_errors() {
+    let mut spec = small();
+    let full = prepare_spec(&spec, &no_files, &mut Quiet).unwrap().problem.kinds.iter().filter(|k| **k != ElementKind::Void).count();
+    spec.keep_out.push(Shape::Box { min: [40.0, -1.0, 15.0], max: [80.0, 41.0, 25.0] });
+    let cut = prepare_spec(&spec, &no_files, &mut Quiet).unwrap().problem.kinds.iter().filter(|k| **k != ElementKind::Void).count();
+    assert!(cut < full * 95 / 100, "{cut} vs {full}");
+
+    let mut nowhere = small();
+    nowhere.loads = vec![LoadSpec { region: Region::Sphere { center: [500.0, 0.0, 0.0], radius: 1.0, tolerance: None }, force: [0.0, 0.0, -1.0], case: 1 }];
+    let e = prepare_spec(&nowhere, &no_files, &mut Quiet).unwrap_err();
+    assert!(e.contains("load 1"), "{e}");
+    let mut floating = small();
+    floating.supports.clear();
+    assert!(prepare_spec(&floating, &no_files, &mut Quiet).unwrap_err().contains("no supports"));
+    let mut bad = small();
+    bad.material.preset = Some("unobtainium".into());
+    assert!(prepare_spec(&bad, &no_files, &mut Quiet).unwrap_err().contains("unknown material"));
+    let _ = SupportSpec { region: Region::Box { min: [0.0; 3], max: [1.0; 3], tolerance: Some(0.0) }, dirs: [true; 3] };
+}

@@ -1,0 +1,16 @@
+[package]
+name = "topopt-study"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "A topology-optimization study as the SolidCraft plugin stores it: settings, materials, supports and loads on faces; ray voxelization of a CAD body; assembly of the topopt-core problem."
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json.workspace = true
+topopt-core = { path = "../topopt-core" }
+topopt-mesh = { path = "../topopt-mesh" }
+parry3d-f64 = "0.31.1"
+

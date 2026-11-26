@@ -1,0 +1,12 @@
+# Build output
+target/
+xtask/target/
+build/
+plugins/*/*.wasm
+
+# Python
+tools/reference/.venv/
+__pycache__/
+
+# Solver output from the examples
+examples/out/

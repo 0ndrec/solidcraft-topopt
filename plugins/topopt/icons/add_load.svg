@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>Add load</title>
+  <path d="M8 38L32 50L32 66L8 54Z" fill="#b8c3cf"/>
+  <path d="M32 50L56 38L56 54L32 66Z" fill="#8e9faf"/>
+  <path d="M32 26L56 38L32 50L8 38Z" fill="#e2e8ef"/>
+  <path d="M32 26L56 38L56 54L32 66L8 54L8 38Z" fill="none" stroke="#34465b" stroke-width="2.55" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M8 38L32 50L56 38" fill="none" stroke="#34465b" stroke-width="2.55" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M32 50L32 66" fill="none" stroke="#34465b" stroke-width="2.55" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M32 4L32 26" fill="none" stroke="#c06f00" stroke-width="4.2" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M23 22L41 22L32 34Z" fill="#c06f00"/>
+</svg>

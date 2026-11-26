@@ -1,0 +1,20 @@
+[package]
+name = "topopt-core"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "Density-based (SIMP) 3D topology optimization on a structured Hex8 grid: matrix-free FE, multigrid-preconditioned CG, density filter, Heaviside projection, OC."
+
+[dependencies]
+faer = { version = "0.24.4", default-features = false, features = ["std", "linalg", "sparse", "sparse-linalg"] }
+serde = { version = "1", features = ["derive"] }
+rayon = { version = "1", optional = true }
+
+[features]
+# Multi-threaded loops for the native solver (the plugin sandbox has one thread).
+parallel = ["dep:rayon"]
+
+[dev-dependencies]
+serde_json.workspace = true

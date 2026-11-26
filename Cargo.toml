@@ -1,0 +1,19 @@
+[workspace]
+resolver = "3"
+members = ["crates/topopt-core", "crates/topopt-mesh", "crates/topopt-study", "plugins/topopt-src", "tools/topopt-solver"]
+
+[workspace.package]
+edition = "2024"
+version = "0.1.0"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/0ndrec/solidcraft-topopt"
+
+[workspace.dependencies]
+wit-bindgen = "0.63"
+serde_json = "1"
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true
+codegen-units = 1

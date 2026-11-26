@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>Create body</title>
+  <path d="M6 21L28 32L28 54L6 43Z" fill="#328bd3"/>
+  <path d="M28 32L50 21L50 43L28 54Z" fill="#236ead"/>
+  <path d="M28 10L50 21L28 32L6 21Z" fill="#b9ddf8"/>
+  <path d="M28 10L50 21L50 43L28 54L6 43L6 21Z" fill="none" stroke="#34465b" stroke-width="2.55" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M6 21L28 32L50 21" fill="none" stroke="#34465b" stroke-width="2.55" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M28 32L28 54" fill="none" stroke="#34465b" stroke-width="2.55" stroke-linejoin="round" stroke-linecap="round"/>
+  <circle cx="49" cy="49" r="12" fill="#c06f00"/>
+  <path d="M49 42L49 56M42 49L56 49" fill="none" stroke="#ffffff" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round"/>
+</svg>

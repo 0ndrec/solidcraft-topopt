@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 160" role="img" aria-label="TopOpt">
+  <title>TopOpt</title>
+  <defs>
+    <linearGradient id="strut" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5fb0ee"/>
+      <stop offset="1" stop-color="#1f5f9e"/>
+    </linearGradient>
+    <linearGradient id="face" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#e8f3fc"/>
+      <stop offset="1" stop-color="#cfe4f6"/>
+    </linearGradient>
+  </defs>
+  <!-- The design domain: an isometric block, drawn faint. -->
+  <g transform="translate(16 8)">
+    <path d="M72 4 L136 37 L136 107 L72 140 L8 107 L8 37 Z" fill="url(#face)" stroke="#8ea6bd" stroke-width="3" stroke-linejoin="round"/>
+    <path d="M8 37 L72 70 L136 37 M72 70 L72 140" fill="none" stroke="#8ea6bd" stroke-width="2" stroke-dasharray="5 5" stroke-linecap="round"/>
+    <!-- The optimized part inside it: a truss grown between the clamp (left) and the load (right). -->
+    <path d="M40 50 L54 103 L80 64 L94 101 L112 82" fill="none" stroke="url(#strut)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M14 42 C56 50 96 70 128 98" fill="none" stroke="url(#strut)" stroke-width="10" stroke-linecap="round"/>
+    <path d="M14 106 C56 104 96 102 128 99" fill="none" stroke="url(#strut)" stroke-width="10" stroke-linecap="round"/>
+    <!-- Clamp and load. -->
+    <path d="M6 38 L6 110" stroke="#a45000" stroke-width="5" stroke-linecap="round"/>
+    <path d="M128 64 L128 86" stroke="#c06f00" stroke-width="4" stroke-linecap="round"/>
+    <path d="M121 82 L135 82 L128 94 Z" fill="#c06f00"/>
+  </g>
+  <text x="188" y="98" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="68" font-weight="700" fill="#236ead">Top<tspan fill="#34465b">Opt</tspan></text>
+  <text x="191" y="130" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="19" fill="#6f879c">topology optimization for SolidCraft</text>
+</svg>

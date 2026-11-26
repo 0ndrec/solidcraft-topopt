@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>TopOpt panel</title>
+  <path d="M10 9L54 9Q59 9 59 14L59 50Q59 55 54 55L10 55Q5 55 5 50L5 14Q5 9 10 9Z" fill="none" stroke="currentColor" stroke-width="4.25" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M36 13L54 13Q55 13 55 14L55 50Q55 51 54 51L36 51Z" fill="#328bd3"/>
+  <path d="M40 21L50 21M40 29L50 29M40 37L47 37" fill="none" stroke="#ffffff" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"/>
+</svg>

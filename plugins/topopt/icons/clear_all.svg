@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>Clear all</title>
+  <path d="M8 14L56 14M8 28L56 28M8 42L36 42" fill="none" stroke="currentColor" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M42 38L58 54M58 38L42 54" fill="none" stroke="#c06f00" stroke-width="4.4" stroke-linejoin="round" stroke-linecap="round"/>
+</svg>

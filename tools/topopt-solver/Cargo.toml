@@ -1,0 +1,18 @@
+[package]
+name = "topopt-solver"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "TopOpt Solver: topology optimization on all CPU cores — a library, a command line for pipelines (solve, check) and the TopOpt plugin's folder solver (watch)."
+
+[dependencies]
+serde_json.workspace = true
+serde = { version = "1", features = ["derive"] }
+topopt-study = { path = "../../crates/topopt-study" }
+topopt-core = { path = "../../crates/topopt-core", features = ["parallel"] }
+
+[dev-dependencies]
+parry3d-f64 = "0.31.1"
+topopt-mesh = { path = "../../crates/topopt-mesh" }

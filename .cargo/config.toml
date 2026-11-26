@@ -1,0 +1,3 @@
+# Plugins run under Wasmtime (Cranelift), which supports 128-bit SIMD.
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "target-feature=+simd128"]

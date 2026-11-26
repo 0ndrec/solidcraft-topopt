@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>Add support</title>
+  <path d="M10 15L32 26L32 44L10 33Z" fill="#b8c3cf"/>
+  <path d="M32 26L54 15L54 33L32 44Z" fill="#8e9faf"/>
+  <path d="M32 4L54 15L32 26L10 15Z" fill="#e2e8ef"/>
+  <path d="M32 4L54 15L54 33L32 44L10 33L10 15Z" fill="none" stroke="#34465b" stroke-width="2.55" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M10 15L32 26L54 15" fill="none" stroke="#34465b" stroke-width="2.55" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M32 26L32 44" fill="none" stroke="#34465b" stroke-width="2.55" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M8 52L56 52" fill="none" stroke="#a45000" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M14 52L9 60M24 52L19 60M34 52L29 60M44 52L39 60M54 52L49 60" fill="none" stroke="#c06f00" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M22 44L32 49L42 44L32 52Z" fill="#c06f00"/>
+</svg>
