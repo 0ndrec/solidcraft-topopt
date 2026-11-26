@@ -51,6 +51,12 @@ ICONS = {
         stroke("M32 4L32 26", O2, "4.2"),
         fill(pts((23, 22), (41, 22), (32, 34)), O2),
     ]),
+    # A block whose top face is kept: the face in blue, a padlock on it.
+    "keep_face": ("Keep surface", block(28, 8, 23, 20, 12, (A2, P2, P3)) + [
+        stroke("M43 44L43 39A6 6 0 0 1 55 39L55 44", O3, "3.2"),
+        fill("M39 44L59 44L59 58L39 58Z", O2),
+        fill("M47.5 48L50.5 48L50.5 54L47.5 54Z", "#ffffff"),
+    ]),
     # The optimized part: a blue truss over the faint outline of its block.
     "optimize": ("Optimize", [
         stroke(pts((32, 6), (57, 19), (57, 45), (32, 58), (7, 45), (7, 19)), "#6f879c", "2"),

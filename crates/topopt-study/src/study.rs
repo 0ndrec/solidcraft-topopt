@@ -175,17 +175,25 @@ pub enum Condition {
     /// A force on faces, spread evenly. `mode`: `vector` uses `force` (N, total); `normal` pushes
     /// into the faces with `magnitude` N.
     Load { id: u32, faces: Vec<FaceRef>, mode: String, force: [f64; 3], magnitude: f64, case: u32 },
+    /// Faces that must not change: a solid layer of `thickness` mm (0 = the pad thickness) under
+    /// them is kept out of the optimization, and the mesh keeps them exactly where they are.
+    Keep {
+        id: u32,
+        faces: Vec<FaceRef>,
+        #[serde(default)]
+        thickness: f64,
+    },
 }
 
 impl Condition {
     pub fn id(&self) -> u32 {
         match self {
-            Condition::Support { id, .. } | Condition::Load { id, .. } => *id,
+            Condition::Support { id, .. } | Condition::Load { id, .. } | Condition::Keep { id, .. } => *id,
         }
     }
     pub fn faces(&self) -> &[FaceRef] {
         match self {
-            Condition::Support { faces, .. } | Condition::Load { faces, .. } => faces,
+            Condition::Support { faces, .. } | Condition::Load { faces, .. } | Condition::Keep { faces, .. } => faces,
         }
     }
     /// Type and value columns of the panel.
@@ -213,6 +221,10 @@ impl Condition {
                 };
                 (if *case > 1 { format!("Load, case {case}") } else { "Load".into() }, what)
             }
+            Condition::Keep { thickness, .. } => (
+                "Keep surface".into(),
+                if *thickness > 0.0 { format!("unchanged, solid {} mm deep", fmt_n(*thickness)) } else { "unchanged, solid pad under it".into() },
+            ),
         }
     }
 
@@ -227,7 +239,7 @@ impl Condition {
             Condition::Load { mode, force, magnitude, .. } => {
                 if mode == "normal" { *magnitude } else { (force[0].powi(2) + force[1].powi(2) + force[2].powi(2)).sqrt() }
             }
-            Condition::Support { .. } => 0.0,
+            Condition::Support { .. } | Condition::Keep { .. } => 0.0,
         }
     }
 }
@@ -333,7 +345,7 @@ impl Study {
             }
         };
         match &mut c {
-            Condition::Support { id: i, .. } | Condition::Load { id: i, .. } => *i = id,
+            Condition::Support { id: i, .. } | Condition::Load { id: i, .. } | Condition::Keep { id: i, .. } => *i = id,
         }
         match self.conditions.iter().position(|x| x.id() == id) {
             Some(p) => self.conditions[p] = c,
@@ -422,6 +434,12 @@ impl Study {
             other => return Err(format!("unknown setting `{other}`")),
         }
         Ok(())
+    }
+
+    /// Whether the mesh is pinned to the design body's faces: asked for (`mesh.keep_faces`), or
+    /// needed by a kept surface.
+    pub fn pins_faces(&self) -> bool {
+        self.mesh.keep_faces || self.conditions.iter().any(|c| matches!(c, Condition::Keep { .. }))
     }
 
     /// What is missing before the study can run.

@@ -97,7 +97,7 @@ Whole runs of the examples (80 000 elements, defaults):
 | 96×48×48 | 221 184 | 85 + 2243 ms | 53 + 546 ms | 3.9× |
 | 128×64×64 | 524 288 | 193 + 6482 ms | 120 + 1544 ms | 4.0× |
 
-`--example profile NX NY NZ` breaks the GPU work down. At 96×48×48:
+`--example gpu_profile NX NY NZ` breaks the GPU work down. At 96×48×48:
 
 | Operation | ms |
 |---|---|

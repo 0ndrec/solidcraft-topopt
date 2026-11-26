@@ -1,5 +1,5 @@
 //! From a study plus voxels to the topopt-core problem: element kinds, supports and loads on the
-//! nodes next to the chosen faces, solid pads under them.
+//! nodes next to the chosen faces, solid pads under them and under kept surfaces.
 
 use crate::study::{Condition, Study};
 use crate::voxel::{Hit, Voxels};
@@ -10,6 +10,8 @@ pub struct Built {
     pub problem: Problem,
     /// Solid pad cells (anchors for the mesh clean-up).
     pub pads: Vec<bool>,
+    /// The cells under kept surfaces (a subset of `pads`): the mesh is not simplified there.
+    pub kept: Vec<bool>,
     pub warnings: Vec<String>,
     /// Nodes used per condition id, for the report.
     pub nodes_per_condition: Vec<(u32, usize)>,
@@ -100,6 +102,7 @@ pub fn build(study: &Study, grid: Grid, design: &Voxels, keep_out: &[bool]) -> R
     let reach = 1.0 * h;
     let pad = if study.settings.pad > 0.0 { study.settings.pad } else { 1.5 * h };
     let mut pads = vec![false; grid.nel()];
+    let mut kept = vec![false; grid.nel()];
     let mut problem = Problem::new(grid);
     problem.material = topopt_core::Material { e: study.material.e, nu: study.material.nu };
     let mut cases: Vec<(u32, Vec<NodeForce>)> = Vec::new();
@@ -128,8 +131,17 @@ pub fn build(study: &Study, grid: Grid, design: &Voxels, keep_out: &[bool]) -> R
             return Err(format!("item {}: no element next to its faces; use a smaller element size", c.id()));
         }
         nodes_per_condition.push((c.id(), nodes.len()));
-        cells_near(&grid, &inside, &pts, pad, &mut pads);
+        let depth = match c {
+            Condition::Keep { thickness, .. } if *thickness > 0.0 => thickness.max(0.5 * h),
+            _ => pad,
+        };
+        cells_near(&grid, &inside, &pts, depth, &mut pads);
+        if matches!(c, Condition::Keep { .. }) {
+            cells_near(&grid, &inside, &pts, depth, &mut kept);
+        }
         match c {
+            // Only material: no support, no force.
+            Condition::Keep { .. } => {}
             Condition::Support { dirs, .. } => {
                 problem.supports.extend(nodes.iter().map(|&node| NodeFix { node, dirs: *dirs }));
             }
@@ -174,10 +186,10 @@ pub fn build(study: &Study, grid: Grid, design: &Voxels, keep_out: &[bool]) -> R
     let solid_share = solid_cells as f64 / (design_cells + solid_cells) as f64;
     if solid_share > 0.5 * study.settings.volfrac.max(0.1) {
         warnings.push(format!(
-            "pads under supports and loads are {:.0} % of the body; the volume target applies to the rest",
+            "solid pads under supports, loads and kept surfaces are {:.0} % of the body; the volume target applies to the rest",
             solid_share * 100.0
         ));
     }
     problem.validate()?;
-    Ok(Built { problem, pads, warnings, nodes_per_condition })
+    Ok(Built { problem, pads, kept, warnings, nodes_per_condition })
 }

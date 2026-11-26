@@ -70,6 +70,7 @@ pub struct Hit { pub point: [f64; 3], pub normal: [f64; 3], pub face: u32 }
 | `Study` | `body`, `keep_out`, `material`, `settings`, `mesh`, `conditions`, `result`, `pending` (a job at the solver), `last_error` |
 | `Condition::Support { id, faces, dirs }` | Faces held along the chosen axes |
 | `Condition::Load { id, faces, mode, force, magnitude, case }` | `mode = "vector"`: total force `force`; `"normal"`: `magnitude` N into the faces (along their mean normal) |
+| `Condition::Keep { id, faces, thickness }` | Faces that must not change: a solid layer `thickness` mm deep (0 = `pad`) under them, and the mesh pinned to them (`Study::pins_faces`) and not simplified next to them |
 | `FaceRef { body, index, point, label }` | A face: body, face number (`model.faces`), the picked point, a label |
 | `Settings`, `MeshSettings` | Fields and defaults in [topopt-solver.md §4.7–4.8](topopt-solver.md#47-settings) |
 | `Material`, `MATERIALS` | 9 presets (`aluminium-6061` … `nylon`): E, ν, density |
@@ -83,7 +84,7 @@ pub struct Hit { pub point: [f64; 3], pub normal: [f64; 3], pub face: u32 }
 
 1. Ray hits are grouped by face; each condition takes the points of its faces (plus the picked point).
 2. Nodes within one element of those points that touch material become support or load nodes; a force is spread evenly over them.
-3. Cells within `pad` (default 1.5 elements) become **solid pads** (`ElementKind::Solid`): real mounting surfaces, and the anchors of mesh clean-up.
+3. Cells within `pad` (default 1.5 elements) become **solid pads** (`ElementKind::Solid`): real mounting surfaces, and the anchors of mesh clean-up. A kept surface makes a pad `thickness` deep (or `pad`) and no boundary condition; its cells also go into `Built::kept` → `Job::kept` → `Density::kept`.
 4. Cells outside the body or inside a keep-out are `Void`.
 5. `finish_job`: the volume fraction is converted from a fraction of the body to a fraction of the design elements (accounting for the pads) and clamped to 0.05…0.95; the filter radius is `rmin = max(1.5, min_member / 2h)`.
 
@@ -91,7 +92,7 @@ Specs (`spec::assemble`) work the same way, except that nodes are chosen by **re
 
 ### Densities
 
-`Density { grid, values, pads, inside, filtered }`: `values` are the physical densities the analysis used (after filter and projection), `filtered` the filtered densities before the projection, with pads 1 and outside 0. The projection makes `values` nearly 0 or 1 per element, so a surface through them follows the voxels; the filtered field varies smoothly and places the same surface (the projection's threshold equals the iso value) between element centres, which together with ×2 cubic upsampling gives round members. Densities saved before `filtered` existed deserialize with it empty and mesh from `values`.
+`Density { grid, values, pads, inside, filtered, kept }`: `values` are the physical densities the analysis used (after filter and projection), `filtered` the filtered densities before the projection, with pads 1 and outside 0. The projection makes `values` nearly 0 or 1 per element, so a surface through them follows the voxels; the filtered field varies smoothly and places the same surface (the projection's threshold equals the iso value) between element centres, which together with ×2 cubic upsampling gives round members. Densities saved before `filtered` existed deserialize with it empty and mesh from `values`. `kept` flags the cells under kept surfaces (empty when there are none): `make_mesh` passes them to `topopt_mesh::extract_with` as frozen samples.
 
 ### Trimming dead weight (`trim`)
 

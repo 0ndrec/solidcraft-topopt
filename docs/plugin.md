@@ -1,6 +1,6 @@
 # The TopOpt plugin for SolidCraft — user guide
 
-The TopOpt plugin (v0.8.1, SolidCraft 0.49.1 and 0.50) does **topology optimization** in your model. You say where material may go, where the part is held and where it is pushed; the plugin finds the stiffest shape from the share of material you allow and inserts it into the model as a body.
+The TopOpt plugin (v0.9.0, SolidCraft 0.49.1 and 0.50) does **topology optimization** in your model. You say where material may go, where the part is held and where it is pushed; the plugin finds the stiffest shape from the share of material you allow and inserts it into the model as a body.
 
 ![The TopOpt panel and ribbon in SolidCraft](images/solidcraft-panel.png)
 
@@ -53,7 +53,17 @@ Pick the faces the force acts on; it is spread evenly over them.
 - **Pushing into the faces**: the force's magnitude, N, into the faces.
 - **Load case**: loads with the same number act together; different numbers are separate situations the part must survive.
 
-The table on the **Setup** tab lists the supports and loads. **Double-click** a row to open its dialog and change or delete it. **Delete…** removes an item by number; **Clear all** removes them all.
+### Optional: faces that must not change — **Keep surface…**
+
+Pick faces that have to stay exactly as they are: mating, sealing, sliding or visible faces, which neither the optimization nor the mesh may touch. For each kept surface:
+- a solid layer under the faces is taken out of the optimization. It is **Solid depth** mm deep, or the pad thickness (about 1.5 elements) with 0. Like the pads under supports and loads, it counts towards the volume target;
+- the result's surface there is pinned to the original faces, even with **Keep the body's faces exact** off. Smoothing and fillets do not move it, mesh simplification does not tilt it, and nothing grows out of the body.
+
+A kept surface holds nothing and carries no force: it only keeps the shape. To also hold the face, add a support on it.
+
+Accuracy: inside a kept face the mesh lies exactly on it, and nothing sticks out of it. Its edges, where it meets faces that are not kept, can be rounded over a strip up to about half an element wide. On the test bracket with 1.7 mm elements, 2 % of the face moved more than 0.1 mm, all within 0.75 mm of the edges, and at most 0.74 mm, in a corner. Smaller elements make that strip narrower. The mesh is not simplified next to kept faces, so it can have more triangles than the budget.
+
+The table on the **Setup** tab lists the supports, loads and kept surfaces. **Double-click** a row to open its dialog and change or delete it. **Delete…** removes an item by number; **Clear all** removes them all.
 
 ### 4. Run — **Optimize**
 
@@ -79,7 +89,7 @@ With "Keep the body's faces exact" and "Keep its sharp edges sharp" (both on by 
 
 | Tab | Content |
 |---|---|
-| **Setup** | Design body, Add support, Add load; the item table; Delete, Clear all |
+| **Setup** | Design body, Add support, Add load, Keep surface; the item table; Delete, Clear all |
 | **Run** | Optimize, Create body, Re-mesh, Refresh; study status (where it runs, time estimate); the result |
 | **Settings** | Keep %, element size, element budget, thinnest member, max iterations (default 150), time limit (480 s) |
 | **Material** | Preset (aluminium 6061 and 7075, structural steel, stainless 316, Ti-6Al-4V, PLA, PETG, ABS, PA12, Custom); E, ν, density |

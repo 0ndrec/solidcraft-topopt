@@ -90,8 +90,9 @@ impl exports::craft::plugin::entry::Guest for Plugin {
                 json!({"opened": entry})
             }
             "design-body" => edit_study(&params)?,
-            "add-support" => add_condition(&params, true)?,
-            "add-load" => add_condition(&params, false)?,
+            "add-support" => add_condition(&params, Kind::Support)?,
+            "add-load" => add_condition(&params, Kind::Load)?,
+            "keep-face" => add_condition(&params, Kind::Keep)?,
             "delete-item" => remove(&params)?,
             "clear-all" => {
                 let mut s = load()?;
@@ -153,7 +154,14 @@ fn edit_study(p: &Value) -> Result<Value, PluginError> {
     Ok(json!({"body": body, "dropped_items": before - s.conditions.len()}))
 }
 
-fn add_condition(p: &Value, support: bool) -> Result<Value, PluginError> {
+#[derive(Clone, Copy, PartialEq)]
+enum Kind {
+    Support,
+    Load,
+    Keep,
+}
+
+fn add_condition(p: &Value, kind: Kind) -> Result<Value, PluginError> {
     let mut s = load()?;
     let replace = p["replace"].as_u64().filter(|&r| r > 0).map(|r| r as u32);
     if p["delete"].as_bool() == Some(true) {
@@ -178,7 +186,9 @@ fn add_condition(p: &Value, support: bool) -> Result<Value, PluginError> {
         s.body = fs.first().map(|f| f.body.clone());
     }
     label_faces(&mut fs);
-    let c = if support {
+    let c = if kind == Kind::Keep {
+        Condition::Keep { id: 0, faces: fs, thickness: num(p, "thickness", 0.0).max(0.0) }
+    } else if kind == Kind::Support {
         let dirs = [p["fix_x"].as_bool().unwrap_or(true), p["fix_y"].as_bool().unwrap_or(true), p["fix_z"].as_bool().unwrap_or(true)];
         if !dirs.iter().any(|&d| d) {
             return Err(invalid("fix_x", "tick at least one of Hold in X, Y, Z"));
@@ -254,6 +264,9 @@ fn edit_item(p: &Value) -> Result<Value, PluginError> {
                     "magnitude": magnitude, "case": case, "replace": id})
             .to_string(),
         )?,
+        Condition::Keep { faces, thickness, .. } => {
+            forms::open("keep-face", &json!({"faces": face_refs_json(faces), "thickness": thickness, "replace": id}).to_string())?
+        }
     }
     Ok(json!({"editing": id}))
 }
@@ -418,7 +431,7 @@ fn optimize() -> Result<Value, PluginError> {
     let mut hooks = JobHooks { start: clock::now() };
     control::progress(0.0, "reading the design body");
     let info = body_info(&body)?;
-    let surf = if study.mesh.keep_faces { surface(&body) } else { None };
+    let surf = if study.pins_faces() { surface(&body) } else { None };
     let mut design = PickCaster { body: body.clone() };
     let mut outs: Vec<PickCaster> = study.keep_out.iter().map(|b| PickCaster { body: b.clone() }).collect();
     let mut out_refs: Vec<&mut dyn Caster> = outs.iter_mut().map(|c| c as &mut dyn Caster).collect();
@@ -452,7 +465,7 @@ fn optimize() -> Result<Value, PluginError> {
     let mut result = outcome.result;
     result.stl = path;
     result.inserted = false;
-    if surf.is_none() && study.mesh.keep_faces {
+    if surf.is_none() && study.pins_faces() {
         result.warnings.push("the body's surface was not available: faces are not kept exactly".into());
     }
     study.result = Some(result.clone());
@@ -467,7 +480,7 @@ fn remesh() -> Result<Value, PluginError> {
     control::progress(0.0, "reading the optimized densities");
     let density = load_density()?;
     let info = body_info(&body)?;
-    let surf = if study.mesh.keep_faces { surface(&body) } else { None };
+    let surf = if study.pins_faces() { surface(&body) } else { None };
     control::progress(0.3, "making the mesh");
     let surface_ref = surf.as_ref().map(|(p, t)| (p.as_slice(), t.as_slice()));
     let (mesh, full) = topopt_study::make_mesh(&study, &density, surface_ref).map_err(|e| invalid("mesh", e))?;

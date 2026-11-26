@@ -83,6 +83,13 @@ entries = [
             "replace": num("Item to change", 0, 0, 100000, "Filled in when you double-click a row; 0 adds a new load.", integer=True),
             "delete": flag("Delete this item", False, "With an item number: remove it instead of changing it."),
         }})},
+    {"name": "keep-face", "effect": "edit", **named("Keep surface", "keep_face", {
+        "type": "object", "required": ["faces"], "properties": {
+            "faces": sel("Faces", "face", "Faces of the design body that must stay exactly as they are: mating, sealing or cosmetic faces.", 1),
+            "thickness": num("Solid depth", 0.0, 0.0, 10000.0, "Material kept under the faces. 0 = the pad thickness (about 1.5 elements).", "mm"),
+            "replace": num("Item to change", 0, 0, 100000, "Filled in when you double-click a row; 0 adds a new kept surface.", integer=True),
+            "delete": flag("Delete this item", False, "With an item number: remove it instead of changing it."),
+        }})},
     {"name": "optimize", "job": True, **named("Optimize", "optimize", EMPTY)},
     {"name": "create-body", "effect": "edit", **named("Create body", "create_body", EMPTY)},
     {"name": "remesh", "job": True, **named("Re-mesh", "remesh", EMPTY)},
@@ -123,8 +130,9 @@ def node(widget):
 # scroll themselves).
 root = node(None)  # filled below
 next_row = node(table("/next", [col("key", "Step"), col("value", "Next")]))
-intro = node({"text": "Pick the design body, then the faces held (supports) and pushed (loads)."})
-setup_tools = node({"toolbar": [btn("Design body…", "design-body"), btn("Add support…", "add-support"), btn("Add load…", "add-load")]})
+intro = node({"text": "Pick the design body, then the faces held (supports) and pushed (loads); optionally faces that must not change."})
+setup_tools = node({"toolbar": [btn("Design body…", "design-body"), btn("Add support…", "add-support"), btn("Add load…", "add-load"),
+                                btn("Keep surface…", "keep-face")]})
 items = node(table("/items", [col("id", "#"), col("kind", "Type"), col("where", "Where"), col("value", "Value")], "single", "panel"))
 hint = node({"text": "Double-click a row to change or delete it."})
 item_tools = node({"toolbar": [btn("Delete…", "delete-item"), btn("Clear all", "clear-all")]})
@@ -165,7 +173,7 @@ mesh = node({"form": {"bind": "/mesh", "fields": [
     field("convert_solid", "Create body makes a solid", "toggle")]}})
 adv_settings = node({"form": {"bind": "/settings", "fields": [
     field("use_solver", "Use TopOpt Solver when it is running", "toggle"),
-    field("pad", "Solid pad under supports/loads (0 = auto)", "length"),
+    field("pad", "Solid pad under supports/loads/kept faces (0 = auto)", "length"),
     field("penal", "SIMP penalty", "number"),
     field("beta_max", "Final sharpness (beta)", "number"),
     field("move_limit", "Move limit per iteration", "number")]}})
@@ -181,7 +189,7 @@ nodes[root] = {"widget": {"group": [next_row, tabs]}}
 manifest = {
     "id": "topopt",
     "name": "TopOpt",
-    "version": "0.8.1",
+    "version": "0.9.0",
     "description": "Topology optimization: pick a design body, supports and loads; get a lightweight, stiff part as a mesh or solid.",
     "capabilities": ["commands@0.2", "ui@0.1", "storage@0.1", "forms@0.1"],
     "runtime": {

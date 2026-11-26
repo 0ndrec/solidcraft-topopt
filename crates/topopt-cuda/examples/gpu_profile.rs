@@ -1,6 +1,6 @@
 //! Milliseconds per GPU operation on a cantilever grid.
 //!
-//!   cargo run --release -p topopt-cuda --example profile -- NX NY NZ
+//!   cargo run --release -p topopt-cuda --example gpu_profile -- NX NY NZ
 
 use topopt_core::backend::LinearSolver;
 use topopt_core::ke::hex8_ke;

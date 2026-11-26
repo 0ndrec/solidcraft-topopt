@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>Keep surface</title>
+  <path d="M5 20L28 32L28 52L5 40Z" fill="#b8c3cf"/>
+  <path d="M28 32L51 20L51 40L28 52Z" fill="#8e9faf"/>
+  <path d="M28 8L51 20L28 32L5 20Z" fill="#328bd3"/>
+  <path d="M28 8L51 20L51 40L28 52L5 40L5 20Z" fill="none" stroke="#34465b" stroke-width="2.55" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M5 20L28 32L51 20" fill="none" stroke="#34465b" stroke-width="2.55" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M28 32L28 52" fill="none" stroke="#34465b" stroke-width="2.55" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M43 44L43 39A6 6 0 0 1 55 39L55 44" fill="none" stroke="#a45000" stroke-width="3.2" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M39 44L59 44L59 58L39 58Z" fill="#c06f00"/>
+  <path d="M47.5 48L50.5 48L50.5 54L47.5 54Z" fill="#ffffff"/>
+</svg>

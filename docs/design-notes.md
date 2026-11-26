@@ -122,6 +122,8 @@ Quality:
 - [x] Round members: filtered field, ×2 cubic upsampling, bilateral smoothing.
 - [x] Optional trimming of thin dead weight within a stiffness budget.
 - [x] Rounded joints between the optimized material and the kept parts.
+- [x] Kept surfaces: faces the optimization and the mesh leave exactly as they are (plugin: Keep surface).
+- [ ] Exact edges where a kept face meets other faces (now rounded over up to half an element; the corners are the worst).
 - [ ] Skeleton-based reconstruction: struts as exact cylinders (capsules) blended at the nodes.
 - [ ] Conformal lattices and ribs on surfaces.
 - [ ] Faster ×2 meshing (the smoothing and decimation of 4× more triangles dominate).

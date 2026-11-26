@@ -115,6 +115,8 @@ pub struct Report {
     pub crease_vertices: usize,
     /// Edge flips that turned a crease of the original surface into mesh edges.
     pub crease_flips: usize,
+    /// Free vertices that smoothing had pushed out of the original body, put back on its surface.
+    pub pulled_back: usize,
     /// Smoothing iterations actually kept (fewer than asked if smoothing caused crossings).
     pub smooth_iterations: usize,
     pub decimated_from: usize,
@@ -137,6 +139,29 @@ fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
 
 /// Classifies the contour's vertices against the original surface. `normals`: of a freely
 /// smoothed copy (the raw contour's staircase normals point along the axes).
+/// Puts free vertices that lie outside the original body, within `band` of it, back onto its
+/// surface; returns how many. Outside means through a face: the offset from the nearest surface
+/// point runs along that face's outward normal (near an edge or corner the direction is ambiguous,
+/// and the vertex is left alone).
+fn pull_back_inside(mesh: &mut Mesh, pins: &[Pin], s: &Projector, band: f64) -> usize {
+    let mut moved = 0;
+    for (v, p) in mesh.positions.iter_mut().enumerate() {
+        if pins[v] != Pin::Free {
+            continue;
+        }
+        let (q, d, n) = s.project_with_normal(*p);
+        if d <= 0.0 || d >= band {
+            continue;
+        }
+        let dir = [(p[0] - q[0]) / d, (p[1] - q[1]) / d, (p[2] - q[2]) / d];
+        if dot(dir, n) > 0.95 {
+            *p = q;
+            moved += 1;
+        }
+    }
+    moved
+}
+
 fn classify(contour: &Mesh, normals: &[[f64; 3]], s: &Projector, h: f64, opts: &Options) -> (Vec<Pin>, Vec<[f64; 3]>) {
     let n = contour.positions.len();
     let mut pins = vec![Pin::Free; n];
@@ -197,16 +222,52 @@ fn classify(contour: &Mesh, normals: &[[f64; 3]], s: &Projector, h: f64, opts: &
 /// If keeping the sharp edges makes the surface cross itself beyond repair, the mesh is made again
 /// without them (`Report::sharp_edges` then says false).
 pub fn extract(field: Field, anchors: Option<&[bool]>, surface: Option<&Projector>, opts: &Options) -> Result<(Mesh, Report), String> {
-    if opts.sharp_edges && surface.is_some() {
-        if let Ok(done) = extract_once(field.clone(), anchors, surface, opts) {
-            return Ok(done);
-        }
-        return extract_once(field, anchors, surface, &Options { sharp_edges: false, ..*opts });
-    }
-    extract_once(field, anchors, surface, opts)
+    extract_with(field, anchors, None, surface, opts)
 }
 
-fn extract_once(mut field: Field, anchors: Option<&[bool]>, surface: Option<&Projector>, opts: &Options) -> Result<(Mesh, Report), String> {
+/// [`extract`] with `frozen` samples (one flag per sample): no vertex near them is merged away or
+/// moved by the decimation, so faces there stay exactly as the pinned smoothing left them.
+pub fn extract_with(
+    field: Field,
+    anchors: Option<&[bool]>,
+    frozen: Option<&[bool]>,
+    surface: Option<&Projector>,
+    opts: &Options,
+) -> Result<(Mesh, Report), String> {
+    if opts.sharp_edges && surface.is_some() {
+        if let Ok(done) = extract_once(field.clone(), anchors, frozen, surface, opts) {
+            return Ok(done);
+        }
+        return extract_once(field, anchors, frozen, surface, &Options { sharp_edges: false, ..*opts });
+    }
+    extract_once(field, anchors, frozen, surface, opts)
+}
+
+/// Whether any of the eight samples around `p` is flagged.
+fn near_flagged(field: &Field, flags: &[bool], p: [f64; 3]) -> bool {
+    let c: [f64; 3] = std::array::from_fn(|d| (p[d] - field.origin[d]) / field.h);
+    for dk in 0..2 {
+        for dj in 0..2 {
+            for di in 0..2 {
+                let ijk = [c[0].floor() as i64 + di, c[1].floor() as i64 + dj, c[2].floor() as i64 + dk];
+                if (0..3).all(|d| ijk[d] >= 0 && (ijk[d] as usize) < field.n[d])
+                    && flags[field.idx(ijk[0] as usize, ijk[1] as usize, ijk[2] as usize)]
+                {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+fn extract_once(
+    mut field: Field,
+    anchors: Option<&[bool]>,
+    frozen: Option<&[bool]>,
+    surface: Option<&Projector>,
+    opts: &Options,
+) -> Result<(Mesh, Report), String> {
     let mut report = Report { sharp_edges: opts.sharp_edges && surface.is_some(), ..Default::default() };
     if opts.blur_passes > 0 {
         field.blur(opts.blur_passes);
@@ -277,6 +338,12 @@ fn extract_once(mut field: Field, anchors: Option<&[bool]>, surface: Option<&Pro
                 restore_volume(&mut mesh, report.pinned_volume, &free, 0.25 * h * share);
             }
         }
+        // The part never leaves the body: a free vertex that smoothing or the volume correction
+        // pushed out through a face (often the row next to a sharp edge, left free so that the
+        // edge does not fold) goes back onto that face.
+        if let Some(s) = surface {
+            report.pulled_back = pull_back_inside(&mut mesh, &pins, s, opts.pin_band * h);
+        }
         // Make the creases mesh edges: the contour's triangles often straddle them diagonally.
         report.crease_flips = 0;
         if let (Some(s), true) = (surface, opts.sharp_edges) {
@@ -321,7 +388,28 @@ fn extract_once(mut field: Field, anchors: Option<&[bool]>, surface: Option<&Pro
     report.corner_vertices = pins.iter().filter(|&&p| p == Pin::Corner).count();
     report.smooth_iterations = iterations;
     report.smoothed_volume = mesh.volume();
-    let rank: Vec<u8> = pins.iter().map(|&p| p as u8).collect();
+    let mut rank: Vec<u8> = pins.iter().map(|&p| p as u8).collect();
+    if let Some(frozen) = frozen {
+        // The free vertices there, and every vertex next to one: merging them tilts the kept
+        // faces' triangles near their edges. Further in, the vertices pinned to a face stay on it
+        // when merged, so the faces themselves still simplify.
+        let near: Vec<bool> = mesh.positions.iter().map(|p| near_flagged(&field, frozen, *p)).collect();
+        let mut lock: Vec<bool> = (0..near.len()).map(|v| near[v] && pins[v] == Pin::Free).collect();
+        for t in &mesh.triangles {
+            if t.iter().any(|&v| lock[v as usize] && pins[v as usize] == Pin::Free) {
+                for &v in t {
+                    if near[v as usize] {
+                        lock[v as usize] = true;
+                    }
+                }
+            }
+        }
+        for (v, &l) in lock.iter().enumerate() {
+            if l {
+                rank[v] = decimate::LOCKED;
+            }
+        }
+    }
 
     // Decimate. A result that crosses itself is decimated again from the start with the crossing
     // triangles' vertices locked; if that does not settle it, the budget grows.
@@ -361,6 +449,15 @@ fn extract_once(mut field: Field, anchors: Option<&[bool]>, surface: Option<&Pro
                 }
                 budget = budget * 3 / 2;
             }
+        }
+    }
+    // Decimation places merged vertices where they fit best, which can again be a hair outside.
+    if let Some(s) = surface {
+        let mut m = mesh.clone();
+        let moved = pull_back_inside(&mut m, &pins, s, opts.pin_band * h);
+        if moved > 0 && m.validate(opts.check_self_intersections).ok() {
+            report.pulled_back += moved;
+            mesh = m;
         }
     }
     mesh.compact();

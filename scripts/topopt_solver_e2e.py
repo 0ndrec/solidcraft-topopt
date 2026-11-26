@@ -65,6 +65,8 @@ part1 = [
     change("/settings/use_solver", use_solver),
     # Extra panel options as JSON, e.g. TOPOPT_E2E_OPTIONS='{"/mesh/upsample": 1}'.
     *[change(k, v) for k, v in json.loads(os.environ.get("TOPOPT_E2E_OPTIONS", "{}")).items()],
+    # Kept surfaces as JSON [[face index, [x, y, z]], ...], e.g. TOPOPT_E2E_KEEP='[[1, [71.2, 40, 8.8]]]'.
+    *[entry("keep-face", {"faces": [face(i, pt)], "thickness": 0}) for i, pt in json.loads(os.environ.get("TOPOPT_E2E_KEEP", "[]"))],
     entry("optimize", {}),
 ]
 t0 = time.time()

@@ -1,7 +1,7 @@
 //! The study pipeline end to end on a box "part", with parry3d standing in for `view.pick`.
 
 use parry3d_f64::math::Vector;
-use parry3d_f64::query::{Ray, RayCast};
+use parry3d_f64::query::{PointQuery, Ray, RayCast};
 use parry3d_f64::shape::TriMesh;
 use topopt_study::voxel::{plan_grid, voxelize};
 use topopt_study::{BodyInfo, Caster, Condition, FaceRef, Hit, Hooks, Study, run};
@@ -123,4 +123,83 @@ fn bracket_study_runs_end_to_end() {
     assert!((total[2] + 1000.0).abs() < 1e-6 && total[0].abs() < 1e-9, "{total:?}");
 }
 
+
+
+/// Area of the mesh's triangles lying in the plane `axis = value`, within `tol`.
+fn area_on_plane(mesh: &topopt_study::Mesh, axis: usize, value: f64, tol: f64) -> f64 {
+    mesh.triangles
+        .iter()
+        .filter(|t| t.iter().all(|&i| (mesh.positions[i as usize][axis] - value).abs() < tol))
+        .map(|t| {
+            let [a, b, c] = t.map(|i| mesh.positions[i as usize]);
+            let (u, v) = ([b[0] - a[0], b[1] - a[1], b[2] - a[2]], [c[0] - a[0], c[1] - a[1], c[2] - a[2]]);
+            let n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+            0.5 * (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt()
+        })
+        .sum()
+}
+
+#[test]
+fn a_kept_surface_stays_whole_and_exact() {
+    let face = |i| FaceRef { body: "Block".into(), index: i, point: None, label: None };
+    let mut study = Study { body: Some("Block".into()), ..Default::default() };
+    study.settings.max_elements = 6000;
+    study.settings.max_iterations = 40;
+    study.mesh.triangles = 6000;
+    study.add(Condition::Support { id: 0, faces: vec![face(5)], dirs: [true; 3] }, None);
+    study.add(Condition::Load { id: 0, faces: vec![face(3)], mode: "vector".into(), force: [0.0, 0.0, -1000.0], magnitude: 0.0, case: 1 }, None);
+    let info = BodyInfo { lo: [0.0; 3], hi: [80.0, 40.0, 20.0], volume: 64_000.0 };
+    let solve = |study: &Study| {
+        let mut part = BoxPart::new([0.0, 0.0, 0.0], [80.0, 40.0, 20.0]);
+        let surface = (part.positions.clone(), part.triangles.clone());
+        run(study, info, &mut part, &mut [], Some((&surface.0, &surface.1)), &mut Quiet).unwrap()
+    };
+    // The +y side (face 4, 80 × 20 mm) of the plain optimization has openings.
+    let plain = solve(&study);
+    let open = area_on_plane(&plain.mesh, 1, 40.0, 0.01);
+    // Kept, even with "keep the body's faces exact" off: the whole face, exactly in its plane.
+    let mut kept = study.clone();
+    kept.mesh.keep_faces = false;
+    let id = kept.add(Condition::Keep { id: 0, faces: vec![face(4)], thickness: 3.0 }, None);
+    assert_eq!(kept.conditions.iter().find(|c| c.id() == id).unwrap().summary().0, "Keep surface");
+    assert!(kept.pins_faces());
+    let out = solve(&kept);
+    assert!(out.mesh.validate(true).ok());
+    // Exactly in its plane, but for strips along its edges where it meets the other faces.
+    let whole = area_on_plane(&out.mesh, 1, 40.0, 0.01);
+    let exact = area_on_plane(&out.mesh, 1, 40.0, 1e-9);
+    let beyond = out.mesh.positions.iter().map(|p| p[1]).fold(f64::NEG_INFINITY, f64::max);
+    println!("+y face: {open:.0} mm² plain, {whole:.0} mm² kept, {exact:.0} mm² exactly (of 1600); max y {beyond}; {} triangles (plain {}); {:?}", out.result.triangles, plain.result.triangles, out.result.warnings);
+    // How far the face moved: the distance from points of the original face to the mesh.
+    let tm = TriMesh::new(
+        out.mesh.positions.iter().map(|p| Vector::new(p[0], p[1], p[2])).collect(),
+        out.mesh.triangles.clone(),
+    )
+    .unwrap();
+    let mut worst = (0.0f64, [0.0; 2]);
+    let mut over = 0;
+    let (mut nx, mut total) = (0, 0);
+    for i in 0..=160 {
+        for k in 0..=40 {
+            let (x, z) = (i as f64 * 0.5, k as f64 * 0.5);
+            let d = tm.distance_to_local_point(Vector::new(x, 40.0, z), false);
+            total += 1;
+            if d > 0.01 {
+                over += 1;
+                if x > 1.0 && x < 79.0 && z > 1.0 && z < 19.0 {
+                    nx += 1;
+                }
+            }
+            if d > worst.0 {
+                worst = (d, [x, z]);
+            }
+        }
+    }
+    println!("face to mesh: worst {:.4} mm at x {} z {}; {over} of {total} points over 0.01 mm, {nx} of them more than 1 mm from an edge", worst.0, worst.1[0], worst.1[1]);
+    assert_eq!(nx, 0, "the kept face moved away from its edges");
+    assert!(worst.0 < 0.15, "the kept face moved {} mm", worst.0);
+    assert!(exact > 0.95 * 1600.0, "exactly in the plane: {exact}");
+    assert!(open < 0.9 * 1600.0, "the plain optimization left the face whole ({open}): the test proves nothing");
+    assert!(beyond <= 40.0 + 1e-9, "the kept face moved outward to y = {beyond}");
+}
 

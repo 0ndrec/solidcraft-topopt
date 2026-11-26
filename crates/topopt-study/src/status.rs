@@ -124,9 +124,21 @@ pub fn rows_with(study: &Study, body: Option<&BodyInfo>, solver: &SolverView) ->
     let supports = study.conditions.iter().filter(|c| matches!(c, Condition::Support { .. })).count();
     let loads: Vec<&Condition> = study.conditions.iter().filter(|c| matches!(c, Condition::Load { .. })).collect();
     let total: f64 = loads.iter().map(|c| c.force_magnitude()).sum();
+    let kept = study.conditions.iter().filter(|c| matches!(c, Condition::Keep { .. })).count();
     r.push((
         "Conditions".into(),
-        format!("{supports} support{}, {} load{} ({} N)", if supports == 1 { "" } else { "s" }, loads.len(), if loads.len() == 1 { "" } else { "s" }, fmt_n(total)),
+        format!(
+            "{supports} support{}, {} load{} ({} N){}",
+            if supports == 1 { "" } else { "s" },
+            loads.len(),
+            if loads.len() == 1 { "" } else { "s" },
+            fmt_n(total),
+            match kept {
+                0 => String::new(),
+                1 => ", 1 kept surface".into(),
+                n => format!(", {n} kept surfaces"),
+            }
+        ),
     ));
     let m = &study.material;
     r.push(("Material".into(), m.label()));

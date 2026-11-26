@@ -23,7 +23,7 @@ pub use voxel::{Caster, Hit};
 
 use serde::{Deserialize, Serialize};
 use topopt_core::{ElementKind, Grid, Optimizer, Problem};
-use topopt_mesh::{Field, Options, Projector, extract};
+use topopt_mesh::{Field, Options, Projector};
 
 pub trait Hooks {
     fn progress(&mut self, fraction: f32, message: &str);
@@ -52,6 +52,10 @@ pub struct Density {
     /// densities saved before it existed: then `values` are used.
     #[serde(default)]
     pub filtered: Vec<f32>,
+    /// Cells under kept surfaces (`Condition::Keep`): the mesh keeps every triangle there. Empty
+    /// when there are none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub kept: Vec<bool>,
 }
 
 pub struct Outcome {
@@ -86,6 +90,9 @@ pub struct Job {
     pub surface: Option<(Vec<[f64; 3]>, Vec<[u32; 3]>)>,
     /// Where the mesh goes, inside the `results` folder.
     pub mesh_path: String,
+    /// Cells under kept surfaces (see [`Density::kept`]); empty when there are none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub kept: Vec<bool>,
 }
 
 pub const JOB_VERSION: u32 = 1;
@@ -116,7 +123,11 @@ pub fn prepare(
     }
     let built = build::build(study, grid, &design_vox, &blocked)?;
     warnings.extend(built.warnings.iter().cloned());
-    finish_job(study, body, built.problem, warnings, surface)
+    let mut job = finish_job(study, body, built.problem, warnings, surface)?;
+    if built.kept.iter().any(|&k| k) {
+        job.kept = built.kept;
+    }
+    Ok(job)
 }
 
 /// The core settings for a problem (the volume target is a fraction of the whole body; pads are
@@ -152,6 +163,7 @@ pub(crate) fn finish_job(study: &Study, body: BodyInfo, problem: Problem, mut wa
         warnings,
         surface: surface.map(|(p, t)| (p.to_vec(), t.to_vec())),
         mesh_path: String::new(),
+        kept: Vec::new(),
     })
 }
 
@@ -201,7 +213,8 @@ pub fn solve(job: &Job, hooks: &mut dyn Hooks) -> Result<Outcome, String> {
             ElementKind::Design => opt.x_filtered[e] as f32,
         })
         .collect();
-    let mut density = Density { grid, values: opt.x_phys.iter().map(|&v| v as f32).collect(), pads, inside, filtered };
+    let kept = job.kept.clone();
+    let mut density = Density { grid, values: opt.x_phys.iter().map(|&v| v as f32).collect(), pads, inside, filtered, kept };
 
     // Thin pieces that add almost no stiffness, when asked for.
     let mut trimmed = 0.0;
@@ -306,7 +319,10 @@ pub fn make_mesh(study: &Study, density: &Density, surface: Surface) -> Result<(
     }
     let field = Field::from_cells(fine, g.h / k as f64, g.origin, &cells, 1);
     let anchors = field.cell_mask(fine, 1, &pads);
-    let projector = match (study.mesh.keep_faces, surface) {
+    // Under kept surfaces the mesh is not simplified: merging triangles there tilts the face.
+    let frozen = (density.kept.len() == values.len() && density.kept.iter().any(|&f| f))
+        .then(|| field.cell_mask(fine, 1, &topopt_mesh::upsample_mask(dims, &density.kept, k)));
+    let projector = match (study.pins_faces(), surface) {
         (true, Some((p, t))) if !t.is_empty() => Some(Projector::new(p, t)?),
         _ => None,
     };
@@ -325,13 +341,13 @@ pub fn make_mesh(study: &Study, density: &Density, surface: Surface) -> Result<(
         pin_band: Options::default().pin_band * k as f64,
         ..Default::default()
     };
-    extract(field, Some(&anchors), projector.as_ref(), &opts)
+    topopt_mesh::extract_with(field, Some(&anchors), frozen.as_deref(), projector.as_ref(), &opts)
 }
 
 /// Warnings about a mesh made with the study's settings.
 pub fn mesh_warnings(study: &Study, report: &topopt_mesh::Report, surface_given: bool) -> Vec<String> {
     let mut w = Vec::new();
-    if study.mesh.keep_faces && study.mesh.sharp_edges && surface_given && !report.sharp_edges {
+    if study.pins_faces() && study.mesh.sharp_edges && surface_given && !report.sharp_edges {
         w.push("the sharp edges could not be kept without the surface crossing itself; they are rounded".into());
     }
     w
