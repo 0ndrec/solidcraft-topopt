@@ -272,6 +272,8 @@ pub struct RunResult {
     pub warnings: Vec<String>,
     /// Share of the material trimmed as dead weight (`MeshSettings::trim_percent`).
     pub trimmed: f64,
+    /// What solved the linear systems ("CPU, 6 threads", or a GPU's name).
+    pub solver: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

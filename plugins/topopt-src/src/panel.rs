@@ -197,6 +197,9 @@ pub fn show(study: &Study, body: Option<&BodyInfo>, solver: &SolverView) -> Resu
             rows.push(("Volume", format!("{:.1} %, {} mm³", r.volume_fraction * 100.0, fmt_n(r.mesh_volume_mm3.round()))));
             rows.push(("Compliance", format!("{:.4} N·mm", r.compliance)));
             rows.push(("Run", format!("{}, {} it., {}", r.outcome, r.iterations, topopt_study::status::fmt_duration(r.seconds))));
+            if !r.solver.is_empty() {
+                rows.push(("Solved on", r.solver.clone()));
+            }
             rows.push(("Cells", format!("{} of {:.2} mm", fmt_n(r.elements as f64), r.h)));
             rows.push(("Mesh", format!("{} triangles", fmt_n(r.triangles as f64))));
             rows.push(("Holes through", r.genus.to_string()));

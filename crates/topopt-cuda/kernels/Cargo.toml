@@ -1,0 +1,23 @@
+[package]
+name = "topopt-cuda-kernels"
+edition = "2024"
+version = "0.1.0"
+license = "MIT OR Apache-2.0"
+publish = false
+description = "The GPU kernels of topopt-cuda, in Rust for nvptx64-nvidia-cuda (nightly). Built by scripts/build-ptx.sh into ../src/kernels.ptx."
+
+# Not part of the main workspace: it only builds for the GPU target, with a nightly toolchain.
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+path = "lib.rs"
+
+[profile.release]
+opt-level = 3
+panic = "abort"
+codegen-units = 1
+debug = false
+
+[profile.dev]
+panic = "abort"

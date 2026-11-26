@@ -1,6 +1,8 @@
 [workspace]
 resolver = "3"
-members = ["crates/topopt-core", "crates/topopt-mesh", "crates/topopt-study", "plugins/topopt-src", "tools/topopt-solver"]
+members = ["crates/topopt-core", "crates/topopt-cuda", "crates/topopt-mesh", "crates/topopt-study", "plugins/topopt-src", "tools/topopt-cuda-solver", "tools/topopt-solver"]
+# The GPU kernels build for nvptx64 with a nightly toolchain (scripts/build-ptx.sh).
+exclude = ["crates/topopt-cuda/kernels"]
 
 [workspace.package]
 edition = "2024"

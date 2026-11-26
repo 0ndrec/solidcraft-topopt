@@ -30,6 +30,11 @@ pub trait Hooks {
     fn cancelled(&mut self) -> bool;
     /// Seconds since the run started (0 when the host has no clock).
     fn elapsed(&mut self) -> f64;
+    /// What solves the linear systems (the CPU multigrid-CG when `None`): `topopt-cuda` gives a
+    /// GPU's.
+    fn solver(&self) -> Option<topopt_core::SolverFactory> {
+        None
+    }
 }
 
 /// The optimized densities, kept so the mesh can be remade with other settings.
@@ -161,7 +166,11 @@ pub fn solve(job: &Job, hooks: &mut dyn Hooks) -> Result<Outcome, String> {
     // between the sandbox and native code), so they are not taken from the job.
     let mut settings = job.settings;
     settings.mg = topopt_core::mg::MgSettings::default();
-    let mut opt = Optimizer::new(problem.clone(), settings)?;
+    let factory = hooks.solver();
+    let mut opt = Optimizer::with_solver(problem.clone(), settings, factory.as_ref())?;
+    let solver_name = opt.solver_name();
+    hooks.progress(0.05, &format!("optimizing on {solver_name}"));
+    warnings.extend(opt.solver_note());
     let max_iter = s.max_iterations.max(1);
     let mut stopped_by_time = false;
     let outcome = opt.run(|it| {
@@ -201,7 +210,7 @@ pub fn solve(job: &Job, hooks: &mut dyn Hooks) -> Result<Outcome, String> {
         let max_loss = study.mesh.trim_percent / 100.0;
         let trim = trim::TrimSettings { max_loss, piece_loss: max_loss / 2.0, ..Default::default() };
         let x: Vec<f64> = density.values.iter().map(|&v| v as f64).collect();
-        let (out, rep) = trim::trim_dead_ends(problem, &settings, &x, study.mesh.iso, &trim)?;
+        let (out, rep) = trim::trim_dead_ends_with(problem, &settings, &x, study.mesh.iso, &trim, factory.as_ref())?;
         trim::apply(&mut density, &out);
         trimmed = rep.removed_fraction;
         if rep.removed_pieces > 0 {
@@ -246,6 +255,7 @@ pub fn solve(job: &Job, hooks: &mut dyn Hooks) -> Result<Outcome, String> {
         inserted: false,
         warnings,
         trimmed,
+        solver: solver_name,
     };
     hooks.progress(1.0, "done");
     Ok(Outcome { mesh, density, result })

@@ -1,0 +1,13 @@
+[package]
+name = "topopt-cuda"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "The multigrid-CG linear solver of topopt-core on an NVIDIA GPU (CUDA driver API, mixed precision); kernels checked in as PTX, no CUDA toolkit needed."
+
+[dependencies]
+topopt-core = { path = "../topopt-core", features = ["parallel"] }
+
+[dev-dependencies]

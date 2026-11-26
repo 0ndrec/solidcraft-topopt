@@ -7,7 +7,11 @@
 //! - [`serve`]: the folder protocol of the SolidCraft plugin (`topopt_study::solver`): watch a
 //!   folder, solve the jobs the plugin writes there, write the results back.
 //!
-//! The `topopt-solver` binary is a thin command line over both (`solve`, `watch`).
+//! The `topopt-solver` binary is a thin command line over both (`solve`, `watch`): [`cli`],
+//! which `topopt-cuda-solver` reuses with its linear systems solved on a GPU
+//! ([`RunOptions::solver`]).
+
+pub mod cli;
 
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -15,6 +19,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use topopt_study::solver::{self, Alive, JobHeader, PROTOCOL, ResultFile};
+use topopt_core::SolverFactory;
 use topopt_study::{Density, Hooks, Job, Mesh, RunResult, Spec};
 
 pub use topopt_study::spec;
@@ -74,7 +79,7 @@ impl Input {
 }
 
 /// Overrides and outputs of [`run`]. Every field is optional.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Default)]
 pub struct RunOptions {
     /// Write the mesh here (`.ply` or `.stl`, by extension).
     pub mesh_out: Option<PathBuf>,
@@ -86,6 +91,23 @@ pub struct RunOptions {
     pub max_iterations: Option<usize>,
     /// Set to true from another thread to stop the run (it then returns `Err("cancelled")`).
     pub cancel: Option<Arc<AtomicBool>>,
+    /// What solves the linear systems (the CPU multigrid-CG when `None`); `topopt-cuda`'s
+    /// `factory` runs them on a GPU.
+    pub solver: Option<SolverFactory>,
+}
+
+impl std::fmt::Debug for RunOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RunOptions")
+            .field("mesh_out", &self.mesh_out)
+            .field("density_out", &self.density_out)
+            .field("result_out", &self.result_out)
+            .field("time_limit", &self.time_limit)
+            .field("max_iterations", &self.max_iterations)
+            .field("cancel", &self.cancel)
+            .field("solver", &self.solver.as_ref().map(|_| "custom"))
+            .finish()
+    }
 }
 
 /// Progress of a run, in order: one `Started`, many `Progress`, then `Finished` or `Failed`.
@@ -111,6 +133,7 @@ pub struct RunOutput {
 struct EventHooks<'a> {
     start: Instant,
     cancel: Option<Arc<AtomicBool>>,
+    solver: Option<SolverFactory>,
     on_event: &'a mut dyn FnMut(&Event),
 }
 
@@ -123,6 +146,9 @@ impl Hooks for EventHooks<'_> {
     }
     fn elapsed(&mut self) -> f64 {
         self.start.elapsed().as_secs_f64()
+    }
+    fn solver(&self) -> Option<SolverFactory> {
+        self.solver.clone()
     }
 }
 
@@ -173,7 +199,7 @@ pub fn prepare(input: &Input, on_event: &mut dyn FnMut(&Event)) -> Result<Job, S
     match input {
         Input::Job(job) => Ok((**job).clone()),
         Input::Spec { spec, base } => {
-            let mut hooks = EventHooks { start: Instant::now(), cancel: None, on_event };
+            let mut hooks = EventHooks { start: Instant::now(), cancel: None, solver: None, on_event };
             let read = |p: &str| -> Result<Vec<u8>, String> {
                 let path = base.join(p);
                 std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))
@@ -206,6 +232,11 @@ pub struct RemeshReport {
 /// trimmed first when the input's `mesh.trim_percent` (or `trim_percent`, which overrides it) is
 /// above 0.
 pub fn remesh(input: &Input, density: &Density, trim_percent: Option<f64>) -> Result<(Mesh, RemeshReport), String> {
+    remesh_with(input, density, trim_percent, None)
+}
+
+/// [`remesh`] with the trimming's analyses solved by what `solver` makes.
+pub fn remesh_with(input: &Input, density: &Density, trim_percent: Option<f64>, solver: Option<&SolverFactory>) -> Result<(Mesh, RemeshReport), String> {
     let job = prepare(input, &mut |_| {})?;
     let g = &job.problem.grid;
     if density.grid.nx != g.nx || density.grid.ny != g.ny || density.grid.nz != g.nz {
@@ -223,7 +254,7 @@ pub fn remesh(input: &Input, density: &Density, trim_percent: Option<f64>) -> Re
         let max_loss = pct / 100.0;
         let t = topopt_study::trim::TrimSettings { max_loss, piece_loss: max_loss / 2.0, ..Default::default() };
         let x: Vec<f64> = density.values.iter().map(|&v| v as f64).collect();
-        let (trimmed, rep) = topopt_study::trim::trim_dead_ends(&job.problem, &settings, &x, job.study.mesh.iso, &t)?;
+        let (trimmed, rep) = topopt_study::trim::trim_dead_ends_with(&job.problem, &settings, &x, job.study.mesh.iso, &t, solver)?;
         topopt_study::trim::apply(&mut density, &trimmed);
         Some(rep)
     } else {
@@ -281,7 +312,7 @@ pub fn run(input: &Input, opts: &RunOptions, on_event: &mut dyn FnMut(&Event)) -
     let outcome = (|| -> Result<RunOutput, String> {
         let start = Instant::now();
         let mut job = prepare(input, &mut *on_event)?;
-        let mut hooks = EventHooks { start, cancel: opts.cancel.clone(), on_event: &mut *on_event };
+        let mut hooks = EventHooks { start, cancel: opts.cancel.clone(), solver: opts.solver.clone(), on_event: &mut *on_event };
         if let Some(t) = opts.time_limit {
             job.study.settings.time_limit = t;
         }
@@ -414,15 +445,15 @@ impl Heartbeat {
 }
 
 /// Solves one plugin job from the folder and writes its mesh, densities and result file (the
-/// result file last). `on_event` sees the run's progress.
-pub fn run_job(folder: &Folder, id: &str, beat: &Heartbeat, on_event: &mut dyn FnMut(&Event)) -> ResultFile {
+/// result file last). `on_event` sees the run's progress; `solver` as in [`RunOptions::solver`].
+pub fn run_job(folder: &Folder, id: &str, beat: &Heartbeat, solver: Option<&SolverFactory>, on_event: &mut dyn FnMut(&Event)) -> ResultFile {
     let mut file = ResultFile { protocol: PROTOCOL, id: id.into(), threads: threads(), ..Default::default() };
     let cancel = Arc::new(AtomicBool::new(false));
     let cancel_path = folder.path(&solver::job_cancel(id));
     let outcome = folder.load_job(id).and_then(|job| {
         let mesh_path = folder.path(&job.mesh_path);
         let input = Input::Job(Box::new(job));
-        let opts = RunOptions { mesh_out: Some(mesh_path), cancel: Some(cancel.clone()), ..Default::default() };
+        let opts = RunOptions { mesh_out: Some(mesh_path), cancel: Some(cancel.clone()), solver: solver.cloned(), ..Default::default() };
         run(&input, &opts, &mut |e: &Event| {
             if let Event::Progress { fraction, message, .. } = e {
                 beat.set(Some(id), *fraction, message);
@@ -466,11 +497,16 @@ pub fn run_job(folder: &Folder, id: &str, beat: &Heartbeat, on_event: &mut dyn F
 /// Watches the folder and solves jobs as they come; with `once`, solves what is there and returns
 /// the number solved.
 pub fn serve(folder: &Folder, once: bool, on_event: &mut dyn FnMut(&str, &Event)) -> usize {
+    serve_with(folder, once, None, on_event)
+}
+
+/// [`serve`] with the linear systems solved by what `solver` makes.
+pub fn serve_with(folder: &Folder, once: bool, solver: Option<&SolverFactory>, on_event: &mut dyn FnMut(&str, &Event)) -> usize {
     let beat = Heartbeat::start(folder);
     let mut solved = 0;
     loop {
         for id in folder.ready_jobs() {
-            run_job(folder, &id, &beat, &mut |e| on_event(&id, e));
+            run_job(folder, &id, &beat, solver, &mut |e| on_event(&id, e));
             solved += 1;
             beat.set(None, 0.0, "idle");
         }

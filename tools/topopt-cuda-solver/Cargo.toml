@@ -1,0 +1,15 @@
+[package]
+name = "topopt-cuda-solver"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "TopOpt CUDA Solver: TopOpt Solver with its linear systems solved on an NVIDIA GPU."
+
+[dependencies]
+topopt-solver = { path = "../topopt-solver" }
+topopt-cuda = { path = "../../crates/topopt-cuda" }
+
+[dev-dependencies]
+serde_json.workspace = true

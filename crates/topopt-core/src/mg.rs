@@ -326,7 +326,42 @@ impl Hierarchy {
         let fine = Elements::Scaled { ke, emod };
         self.fine_inv_diag = invert(fem::diagonal(&self.fine_grid, &fine, &self.fine_fixed));
         self.fine_omega = self.settings.omega * 2.0 / lambda_max(&self.fine_grid, &fine, &self.fine_fixed, &self.fine_inv_diag, &mut self.fine_eig, self.settings.power_steps);
+        self.galerkin(ke, emod);
+        for level in &mut self.levels {
+            level.inv_diag = invert(fem::diagonal(&level.grid, &Elements::Own(&level.mats), &level.fixed));
+            level.omega = self.settings.omega * 2.0 / lambda_max(&level.grid, &Elements::Own(&level.mats), &level.fixed, &level.inv_diag, &mut level.eig, self.settings.power_steps);
+        }
+        self.factorize_coarsest(ke, emod)
+    }
 
+    /// Rebuilds only the coarse element matrices and the coarsest factorization, not the
+    /// smoothers' diagonals and damping: for a backend that runs the V-cycle itself and computes
+    /// those on its own (`topopt-cuda`).
+    pub fn update_coarse(&mut self, ke: &Ke, emod: &[f64]) -> Result<(), String> {
+        self.galerkin(ke, emod);
+        self.factorize_coarsest(ke, emod)
+    }
+
+    /// `P_cᵀ·ke·P_c` for the eight child positions `c` of a first-level coarse element (with the
+    /// unscaled `ke` of the last update): that element's matrix is `Σ_c emod[child c] · g[c]`.
+    pub fn child_galerkin(&self) -> Option<&[Ke; 8]> {
+        self.child_galerkin.as_ref()
+    }
+
+    /// Number of coarse levels (the levels below the fine grid).
+    pub fn coarse_levels(&self) -> usize {
+        self.levels.len()
+    }
+
+    /// Coarse level `l` (`0` is the level below the fine grid): its grid, fixed dofs and element
+    /// matrices (after an update).
+    pub fn coarse_level(&self, l: usize) -> (Grid, &[bool], &[Ke32]) {
+        let lv = &self.levels[l];
+        (lv.grid, &lv.fixed, &lv.mats)
+    }
+
+    /// The Galerkin element matrices of every coarse level.
+    fn galerkin(&mut self, ke: &Ke, emod: &[f64]) {
         if !self.levels.is_empty() && self.child_galerkin.is_none() {
             let mut cg = [[0.0f64; 576]; 8];
             for (c, m) in cg.iter_mut().enumerate() {
@@ -366,10 +401,7 @@ impl Hierarchy {
                     *dst = *src as f32;
                 }
             });
-            level.inv_diag = invert(fem::diagonal(&cgrid, &Elements::Own(&level.mats), &level.fixed));
-            level.omega = self.settings.omega * 2.0 / lambda_max(&cgrid, &Elements::Own(&level.mats), &level.fixed, &level.inv_diag, &mut level.eig, self.settings.power_steps);
         }
-        self.factorize_coarsest(ke, emod)
     }
 
     fn factorize_coarsest(&mut self, ke: &Ke, emod: &[f64]) -> Result<(), String> {
@@ -452,7 +484,9 @@ impl Hierarchy {
         Ok(())
     }
 
-    fn coarse_solve(&self, b: &[f64], x: &mut [f64]) {
+    /// Solves the coarsest level's system (the fine one when there are no coarse levels) with
+    /// its factorization: `x = A⁻¹·b`.
+    pub fn coarse_solve(&self, b: &[f64], x: &mut [f64]) {
         x.copy_from_slice(b);
         let llt = self.coarse.as_ref().and_then(|c| c.llt.as_ref()).expect("update() before solving");
         let mat = faer::MatMut::from_column_major_slice_mut(x, b.len(), 1);

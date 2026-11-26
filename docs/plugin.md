@@ -1,6 +1,6 @@
 # The TopOpt plugin for SolidCraft — user guide
 
-The TopOpt plugin (v0.7.0, SolidCraft 0.49.1) does **topology optimization** in your model. You say where material may go, where the part is held and where it is pushed; the plugin finds the stiffest shape from the share of material you allow and inserts it into the model as a body.
+The TopOpt plugin (v0.8.0, SolidCraft 0.49.1) does **topology optimization** in your model. You say where material may go, where the part is held and where it is pushed; the plugin finds the stiffest shape from the share of material you allow and inserts it into the model as a body.
 
 ![The TopOpt panel and ribbon in SolidCraft](images/solidcraft-panel.png)
 
@@ -98,6 +98,8 @@ The SolidCraft sandbox gives a plugin one thread (about 17 % of a 6-core CPU). T
 4. Closing the window stops the solver. Pressing Optimize again cancels the solver's previous job.
 
 To keep the solver running but unused, untick "Use TopOpt Solver when it is running" on the **Advanced** tab.
+
+**With an NVIDIA GPU**, start `build/solver/start-topopt-cuda-solver.cmd` instead (only one of the two on a folder). TopOpt CUDA Solver takes the same jobs and solves the finite-element systems on the GPU, about twice as fast on the examples, with the same result. The result's **Solved on** row names the GPU, or says CPU when the GPU could not be used (the warnings say why). See [topopt-cuda.md](topopt-cuda.md).
 
 The solver also solves studies without SolidCraft, from the command line and scripts: [topopt-solver.md](topopt-solver.md).
 

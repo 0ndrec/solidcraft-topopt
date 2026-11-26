@@ -16,6 +16,7 @@ The problem: **minimum compliance under a volume constraint**. Find the material
 | `pcg` | Preconditioned conjugate gradients |
 | `filter` | Density filter (a cone of radius `rmin`), Heaviside projection and its derivative |
 | `opt` | The optimization loop: `Optimizer`, `Settings`, `Iteration`, `Outcome` |
+| `backend` | What solves the linear systems: the `LinearSolver` trait, `CpuSolver`, `SolverFactory` |
 | `par` | Parallel loops (rayon, feature `parallel`) or plain loops |
 
 ## Units and grid
@@ -89,6 +90,7 @@ let densities = &opt.x_phys; // physical densities 0…1 per element
 | Method or field | Purpose |
 |---|---|
 | `new(problem, settings)` | Checks, element matrix, filter, multigrid hierarchy |
+| `with_solver(problem, settings, Some(&factory))` | The same with the linear systems solved by another back-end (`topopt_cuda::factory` for a GPU) |
 | `run(callback) -> Outcome` | Iterates until converged (`Converged`), the limit (`MaxIterations`) or `false` from the callback (`Cancelled`) |
 | `step() -> Iteration` | One iteration: FE solve, sensitivities, filter, OC |
 | `evaluate() -> Evaluation` | Compliance and gradients `dc`, `dv` at the current design, without a step |
@@ -97,6 +99,7 @@ let densities = &opt.x_phys; // physical densities 0…1 per element
 | `u` | Displacements per load case (CG warm starts between iterations) |
 | `history: Vec<Iteration>` | `iter`, `compliance`, `volume`, `change`, `beta`, `grayness`, `cg_iterations`, `cg_worst_residual` |
 | `mg_levels()` | The multigrid level grids (diagnostics) |
+| `solver_name()`, `solver_note()` | What solves the linear systems; why a GPU was not used, if so |
 
 ### One iteration
 
@@ -125,6 +128,8 @@ let densities = &opt.x_phys; // physical densities 0…1 per element
 | `smooth_steps` | 2 | Jacobi sweeps before and after the coarse correction |
 | `omega` | 0.6 | Fraction of the Jacobi stability limit |
 | `power_steps` | 3 | Power-iteration steps per update |
+
+**Back-ends.** The optimizer reaches the solver only through `backend::LinearSolver`: `update(ke, emod)` once per iteration, then `solve(ke, emod, f, u, tol, max_iter)` per load case. `CpuSolver` is the multigrid-CG above. [topopt-cuda](topopt-cuda.md) runs the same method on an NVIDIA GPU, using `Hierarchy::update_coarse`, `coarse_level`, `child_galerkin` and `coarse_solve` for the parts it leaves on the CPU.
 
 ## Performance
 

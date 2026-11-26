@@ -25,9 +25,13 @@ xtask/                     componentize (instead of `wasm-tools component new`),
 crates/topopt-core/        the core: FE, multigrid-CG, SIMP                 → docs/topopt-core.md
 crates/topopt-mesh/        field → closed mesh; STL/PLY                       → docs/topopt-mesh.md
 crates/topopt-study/       studies, voxelization, specs, protocol             → docs/topopt-study.md
+crates/topopt-cuda/        the multigrid-CG on an NVIDIA GPU                  → docs/topopt-cuda.md
+  kernels/                 its GPU kernels: Rust for nvptx64 (nightly), outside the workspace
+  src/kernels.ptx          the built kernels, checked in (scripts/build-ptx.sh)
 plugins/topopt-src/        the plugin: entries, host glue, panel
 plugins/topopt/            the plugin package: plugin.json (generated), icons/, topopt.wasm (built)
 tools/topopt-solver/       TopOpt Solver: library + CLI + launcher            → docs/topopt-solver.md
+tools/topopt-cuda-solver/  TopOpt CUDA Solver: the CLI with a GPU factory + launcher
 tools/reference/           Python references: top3d_ref.py, check_stl.py
 examples/                  example specs for topopt-solver
 scripts/                   builds, generators, headless tests, render_mesh.py (PNG renders of results)
@@ -39,7 +43,8 @@ Crate dependencies:
 ```
 topopt-core ← topopt-mesh ← topopt-study ← topopt-plugin (wasm)
      ↑                            ↑
-     └──── (feature parallel) ── topopt-solver (native)
+     ├──── (feature parallel) ── topopt-solver (native) ◄── topopt-cuda-solver
+     └──── topopt-cuda ─────────────────────────────────────────┘
 ```
 
 ## Build
@@ -66,7 +71,16 @@ Do **not** edit `plugin.json` by hand: `gen_topopt_manifest.py` writes it, and t
 scripts/build-solver.sh
 ```
 
-Builds the release binary and copies it with `start-topopt-solver.cmd` into `build/solver/`. A running solver keeps its exe locked on Windows; the script renames it out of the way first.
+Builds both release binaries, `topopt-solver` and `topopt-cuda-solver`, and copies them with their launchers into `build/solver/`. A running solver keeps its exe locked on Windows, so the script renames it out of the way first.
+
+### The GPU kernels
+
+```sh
+rustup toolchain install nightly --profile minimal --component llvm-tools,llvm-bitcode-linker,rust-src --target nvptx64-nvidia-cuda
+scripts/build-ptx.sh
+```
+
+Only after changing `crates/topopt-cuda/kernels/lib.rs`: the PTX is checked in, so normal builds need no nightly and no CUDA toolkit. The test `ptx_matches_the_kernel_source` catches a stale PTX. Details: [topopt-cuda.md](topopt-cuda.md#6-rebuilding-the-kernels).
 
 ## Tests
 
@@ -143,6 +157,6 @@ Driving the app from an agent over MCP:
 
 ## Versions
 
-- Plugin: the manifest version (0.7.0).
+- Plugin: the manifest version (0.8.0).
 - Crates and solver: the workspace `version` (0.1.0); the solver reports it in its heartbeat, `version` and the `started` event.
 - Plugin ↔ solver protocol: `PROTOCOL = 1`; job format: `JOB_VERSION = 1`.

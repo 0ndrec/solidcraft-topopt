@@ -379,7 +379,9 @@ Element order: index `i + nx·(j + ny·k)`; the element's centre is `origin + h�
   "seconds": 10.0,
   "stl": "out/cantilever.ply",
   "inserted": false,
-  "warnings": []
+  "warnings": [],
+  "trimmed": 0.0,
+  "solver": "CPU, 6 threads"
 }
 ```
 
@@ -395,6 +397,7 @@ Element order: index `i + nx·(j + ny·k)`; the element's centre is `origin + h�
 | `stl` | Where the mesh was written (a historical name: it may be PLY). Empty with `--no-files` |
 | `inserted` | Used by the plugin; always `false` here |
 | `trimmed` | Share of the material trimmed as dead weight (`mesh.trim_percent`), 0 when off |
+| `solver` | What solved the linear systems: `CPU, 6 threads`, or a GPU's name with `topopt-cuda-solver` |
 | `warnings` | Open domain, too few elements across, time limit reached, sharp edges that had to be rounded… **Show these to the pipeline's user** |
 
 ## 6. Progress, exit codes, cancelling
@@ -555,7 +558,9 @@ let summary = out.result;      // RunResult, as in result.json
 | `Input::Spec { spec, base }` | A study from a spec; `base` is the folder relative paths resolve from |
 | `Input::Job(Box<Job>)` | A job prepared by the plugin |
 | `Input::from_file(path)`, `Input::from_json(bytes, base)` | Read either kind, detected from the content |
-| `RunOptions` | `mesh_out`, `density_out`, `result_out` (`Option<PathBuf>`); `time_limit`, `max_iterations`; `cancel: Option<Arc<AtomicBool>>` |
+| `RunOptions` | `mesh_out`, `density_out`, `result_out` (`Option<PathBuf>`); `time_limit`, `max_iterations`; `cancel: Option<Arc<AtomicBool>>`; `solver: Option<SolverFactory>` (`topopt_cuda::factory(…)` solves on a GPU) |
+| `serve_with`, `remesh_with` | `serve` and `remesh` with a `SolverFactory` |
+| `cli::main_with(App, args)` | The whole command line as a function: `topopt-cuda-solver` is this with a GPU factory |
 | `run(&Input, &RunOptions, &mut dyn FnMut(&Event)) -> Result<RunOutput, String>` | A whole run. The error `"cancelled"` means it was cancelled |
 | `RunOutput` | `result: RunResult`, `mesh: Mesh`, `density: Density`, `files: Vec<PathBuf>` |
 | `Event` | `Started`, `Progress`, `Finished`, `Failed`; its `Serialize` is the `--progress json` format |
@@ -637,6 +642,8 @@ Tips:
 - `--threads` below the core count keeps the machine responsive; independent studies can run side by side with the cores split between them.
 
 How the solver works inside (multigrid, element colouring, direct-solve thresholds): [topopt-core.md](topopt-core.md#performance).
+
+With an NVIDIA GPU, `topopt-cuda-solver` takes the same arguments and runs the linear solves 3–4× faster (whole runs about 2× on the examples, since filtering, the update and meshing stay on the CPU): [topopt-cuda.md](topopt-cuda.md).
 
 ## 11. Troubleshooting
 

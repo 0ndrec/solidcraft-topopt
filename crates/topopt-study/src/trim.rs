@@ -105,9 +105,21 @@ pub fn apply(density: &mut crate::Density, trimmed: &[f64]) {
 /// (everything else unchanged, grey values included) and a report. `settings` are the optimizer's
 /// (material interpolation, solver).
 pub fn trim_dead_ends(problem: &Problem, settings: &topopt_core::Settings, x: &[f64], iso: f64, trim: &TrimSettings) -> Result<(Vec<f64>, TrimReport), String> {
+    trim_dead_ends_with(problem, settings, x, iso, trim, None)
+}
+
+/// [`trim_dead_ends`] with the analyses solved by what `solver` makes (the CPU when `None`).
+pub fn trim_dead_ends_with(
+    problem: &Problem,
+    settings: &topopt_core::Settings,
+    x: &[f64],
+    iso: f64,
+    trim: &TrimSettings,
+    solver: Option<&topopt_core::SolverFactory>,
+) -> Result<(Vec<f64>, TrimReport), String> {
     let grid = problem.grid;
     let nel = grid.nel();
-    let mut opt = Optimizer::new(problem.clone(), *settings)?;
+    let mut opt = Optimizer::with_solver(problem.clone(), *settings, solver)?;
     let solid: Vec<bool> = x.iter().map(|&v| v >= iso).collect();
     let mut cur: Vec<f64> = solid.iter().map(|&s| if s { 1.0 } else { 0.0 }).collect();
     let analyse = |opt: &mut Optimizer, d: &[f64]| -> Result<f64, String> {

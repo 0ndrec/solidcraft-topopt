@@ -5,11 +5,12 @@
 //! 0 or 1) → modulus `E = E_min + x̄ᵖ·(1 − E_min)` → FE solves → compliance and sensitivities →
 //! back through projection and filter → OC update with a bisection on the volume multiplier.
 
-use crate::fem::{self, Elements};
+use crate::backend::{CpuSolver, LinearSolver, SolverFactory};
+use crate::fem;
 use crate::filter::{DensityFilter, project, project_derivative};
 use crate::ke::{Ke, hex8_ke};
-use crate::mg::{Hierarchy, MgSettings};
-use crate::pcg::{PcgStats, dot, pcg};
+use crate::mg::MgSettings;
+use crate::pcg::{PcgStats, dot};
 use crate::problem::{ElementKind, Problem};
 use serde::{Deserialize, Serialize};
 
@@ -108,11 +109,10 @@ pub struct Optimizer {
     pub problem: Problem,
     pub settings: Settings,
     ke: Ke,
-    fixed: Vec<bool>,
     forces: Vec<Vec<f64>>,
     weights: Vec<f64>,
     filter: DensityFilter,
-    hierarchy: Hierarchy,
+    solver: Box<dyn LinearSolver>,
     design: Vec<bool>,
     n_design: usize,
     /// Design variables.
@@ -130,6 +130,12 @@ pub struct Optimizer {
 
 impl Optimizer {
     pub fn new(problem: Problem, settings: Settings) -> Result<Self, String> {
+        Self::with_solver(problem, settings, None)
+    }
+
+    /// Like [`Optimizer::new`], with the linear systems solved by what `factory` makes (the
+    /// CPU multigrid-CG when `None`).
+    pub fn with_solver(problem: Problem, settings: Settings, factory: Option<&SolverFactory>) -> Result<Self, String> {
         problem.validate()?;
         if !(settings.volfrac > 0.0 && settings.volfrac < 1.0) {
             return Err("volume fraction must be between 0 and 1".into());
@@ -141,7 +147,10 @@ impl Optimizer {
         let forces = problem.force_vectors(&fixed);
         let weights = problem.load_cases.iter().map(|c| c.weight).collect();
         let filter = DensityFilter::new(grid, settings.rmin);
-        let hierarchy = Hierarchy::new(grid, fixed.clone(), settings.mg);
+        let solver: Box<dyn LinearSolver> = match factory {
+            Some(make) => make(&grid, &fixed, &settings.mg)?,
+            None => Box::new(CpuSolver::new(grid, fixed, settings.mg)),
+        };
         let design: Vec<bool> = (0..grid.nel()).map(|e| problem.kind(e) == ElementKind::Design).collect();
         let n_design = design.iter().filter(|&&d| d).count();
         let x: Vec<f64> = (0..grid.nel())
@@ -155,11 +164,10 @@ impl Optimizer {
         let ncases = forces.len();
         let mut opt = Optimizer {
             ke,
-            fixed,
             forces,
             weights,
             filter,
-            hierarchy,
+            solver,
             design,
             n_design,
             x,
@@ -178,7 +186,17 @@ impl Optimizer {
 
     /// Levels of the multigrid hierarchy (finest first).
     pub fn mg_levels(&self) -> Vec<crate::Grid> {
-        self.hierarchy.level_grids()
+        self.solver.levels()
+    }
+
+    /// What solves the linear systems ([`LinearSolver::name`]).
+    pub fn solver_name(&self) -> String {
+        self.solver.name()
+    }
+
+    /// What the user should know about the linear solver ([`LinearSolver::note`]).
+    pub fn solver_note(&self) -> Option<String> {
+        self.solver.note()
     }
 
     fn physical_of(&self, x: &[f64], filtered: &mut [f64], phys: &mut [f64]) {
@@ -232,21 +250,11 @@ impl Optimizer {
     /// Solves every load case for the current physical densities; returns per-case stats.
     pub fn solve(&mut self) -> Result<Vec<PcgStats>, String> {
         let emod = self.moduli(&self.x_phys);
-        self.hierarchy.update(&self.ke, &emod)?;
-        let grid = self.problem.grid;
+        self.solver.update(&self.ke, &emod)?;
         let mut stats = Vec::new();
         for c in 0..self.forces.len() {
-            let (ke, fixed, h) = (&self.ke, &self.fixed, &self.hierarchy);
-            let elems = Elements::Scaled { ke, emod: &emod };
-            let s = pcg(
-                |x, y| fem::apply(&grid, &elems, fixed, x, y),
-                |r, z| h.vcycle(ke, &emod, r, z),
-                &self.forces[c],
-                &mut self.u[c],
-                self.settings.pcg_tol,
-                self.settings.pcg_max_iter,
-            );
-            stats.push(s);
+            let (tol, max_iter) = (self.settings.pcg_tol, self.settings.pcg_max_iter);
+            stats.push(self.solver.solve(&self.ke, &emod, &self.forces[c], &mut self.u[c], tol, max_iter)?);
         }
         Ok(stats)
     }

@@ -94,7 +94,17 @@ The matrix-free Hex8 product runs at about 2 GFLOP/s in the sandbox (Cranelift):
 
 ## 4. GPU
 
-Inside the plugin: impossible (no GPU access; plugin WGSL shaders cannot use storage buffers or compute). Outside, through the solver protocol, it is possible. On the development machine's Quadro P620 (FP64 at 1/32 rate) a CUDA FP64 port would match the 6-thread CPU solver, so the multi-threaded CPU solver came first. A GPU pays off only in FP32 (mixed precision: FP32 V-cycle and products, FP64 outer CG) and for grids beyond ~250k elements. Vendor-neutral `wgpu` or `cudarc` would be the routes; NVIDIA's `cuda-bindings` needs the CUDA Toolkit and MSVC at build time, and its Rust kernels (`cuda-oxide`) require Ampere or newer.
+Inside the plugin: impossible (no GPU access; plugin WGSL shaders cannot use storage buffers or compute). Outside, through the solver protocol: **TopOpt CUDA Solver** ([topopt-cuda.md](topopt-cuda.md)).
+
+- **Mixed precision, because of FP64.** The Quadro P620 runs FP64 at 1/32 of FP32. A pure-FP64 port would at best match the 6-thread CPU: its double-precision product is 6.5 ms against 1.5 ms in single. So the V-cycle, products and CG are single precision, and an outer iterative refinement in double brings the answer to the CPU's tolerance. It costs about 15 % more CG iterations. On the examples the optimization takes exactly the CPU's path: same iterations, compliance to 6 digits.
+- **The driver API, loaded at run time, and PTX checked in.** Building needs no CUDA toolkit or MSVC, and running needs only the driver.
+- **Kernels in Rust.** NVRTC from NVIDIA's pip wheel was the other option. Rust's nvptx target emits sm_70 PTX; the kernels use nothing newer than sm_32, so the build retargets them to sm_52 for Pascal.
+- **What moved the P620 from 1.0× to 4× the CPU,** in order:
+  1. coarse matrices stored entry-major for coalesced reads (a coarse product: 9 → 1.1 ms);
+  2. operator inputs through `ld.global.nc`;
+  3. the element matrix as a by-value kernel parameter, so it sits in the constant bank, with fully unrolled corner loops (fine product: 4.7 → 1.5 ms);
+  4. the first coarse level formed on the GPU instead of being transposed and uploaded (update: 489 → 120 ms at 524k elements).
+- **What did not help:** gathering the 27 neighbours up front pays only in the single-precision fine product. In the double-precision and coarse kernels the registers it costs (254 per thread in double) lowered occupancy and made them slower.
 
 ## 5. Licences of the sources consulted
 
@@ -127,6 +137,6 @@ Extensions, by priority:
 1. MMA (Svanberg) for several constraints.
 2. Overhang filter for 3D printing (Langelaar).
 3. Stress constraints (p-norm, MMA).
-4. Optional GPU backend behind the solver protocol.
+4. ~~Optional GPU backend behind the solver protocol~~: done (TopOpt CUDA Solver). Next on the GPU: the filter and OC bisection, now 60 % of a GPU iteration.
 5. Eigenfrequencies and self-weight.
 6. Symmetry planes.

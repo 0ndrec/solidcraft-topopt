@@ -578,7 +578,10 @@ fn take_solver_result(study: &mut Study) -> Result<(), PluginError> {
                 }
             }
             r.inserted = false;
-            r.warnings.push(format!("solved by TopOpt Solver on {} threads", file.threads));
+            // The solver names what solved the systems (a GPU with TopOpt CUDA Solver); older
+            // solvers only report their threads.
+            let on = if r.solver.is_empty() { format!("{} threads", file.threads) } else { r.solver.clone() };
+            r.warnings.push(format!("solved by TopOpt Solver on {on}"));
             study.result = Some(r);
             study.last_error = None;
         }

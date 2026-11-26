@@ -177,7 +177,7 @@ nodes[root] = {"widget": {"group": [next_row, tabs]}}
 manifest = {
     "id": "topopt",
     "name": "TopOpt",
-    "version": "0.7.0",
+    "version": "0.8.0",
     "description": "Topology optimization: pick a design body, supports and loads; get a lightweight, stiff part as a mesh or solid.",
     "capabilities": ["commands@0.2", "ui@0.1", "storage@0.1", "forms@0.1"],
     "runtime": {

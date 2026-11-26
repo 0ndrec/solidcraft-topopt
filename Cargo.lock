@@ -1028,6 +1028,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "topopt-cuda"
+version = "0.1.0"
+dependencies = [
+ "topopt-core",
+]
+
+[[package]]
+name = "topopt-cuda-solver"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "topopt-cuda",
+ "topopt-solver",
+]
+
+[[package]]
 name = "topopt-mesh"
 version = "0.1.0"
 dependencies = [
