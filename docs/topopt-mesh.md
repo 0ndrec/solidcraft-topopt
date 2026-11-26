@@ -46,6 +46,23 @@ std::fs::write("part.stl", mesh.to_stl("topopt"))?;
 
 `topopt-study` meshes the optimizer's *filtered* densities upsampled ×2 by default ([topopt-study.md](topopt-study.md)); on a bridge, strut cross-sections fit an ellipse to 0.984 instead of 0.956 and the mean angle between neighbouring triangles fell from 15.7° to 10.4° at the same triangle count.
 
+## Rounded joints: `blend`
+
+`round_joints(dims, h, values, iso, a, b, domain, radius)` adds fillets of radius `radius` where body `a` meets body `b` on a cell field, the way an implicit CAD kernel's rounded boolean union does:
+1. exact signed distance fields of both bodies from their cell masks (`signed_distance`: a Euclidean distance transform, Felzenszwalb & Huttenlocher, O(n); exact to half a cell);
+2. their rounded union `round_union(a, b, r) = max(r, min(a, b)) − √(max(r − a, 0)² + max(r − b, 0)²)`, which is the plain union except within `r` of both bodies, and there a circular fillet of radius `r` (exact for faces meeting at a right angle);
+3. the field is raised to that union's density ramp **only in the fillet zone** and never lowered, so the rest of the surface stays exactly as it was; the blended field is smoothed once ([¼ ½ ¼] per axis) there, as distances exact to half a cell would otherwise leave steps.
+
+The two bodies must be different parts: the rounded union of a body with itself would grow its whole surface. `topopt-study` uses `a` = the optimized material and `b` = the pads under supports and loads plus keep-in regions, with a radius of 1.5 elements by default (`mesh.fillets`, `mesh.fillet_radius`).
+
+![Section through a bridge's strut-to-deck joints without (grey) and with (blue) rounded joints](images/fillet-section.png)
+
+*A section through a bridge's strut-to-deck joints without fillets (grey) and with the default fillets (blue): the joints are rounder and a pinhole at a joint is closed.*
+
+The effect is modest on the defaults: the filtered field and the smoothing already round joints by about 1.5 elements. Measured on the examples: the cantilever's volume grows 0.7 % (same number of holes), the bridge's 3.5 % (two pinholes at joints closed). Larger radii round more visibly but close small openings near the joints, and on the bridge 2 elements already made smoothing back off.
+
+The polynomial smooth minimum `min(a, b) − h²k/4` was tried first: its fillet is only about 0.6 × `k` and it adds `k/4` along the whole contact, so a radius setting did not mean millimetres.
+
 ## Smoothers
 
 | `Smoother` | Method | Use it for |
@@ -151,6 +168,7 @@ pub struct Mesh { pub positions: Vec<[f64; 3]>, pub triangles: Vec<[u32; 3]> }
 | `field` | `Field { n, origin, h, values }`: `from_cells`, `cell_mask`, `blur`, `nudge`, `zero_border`, `components`; `clean_components`, `upsample_cells`, `upsample_mask` |
 | `mt` | `marching_tetrahedra(&Field, iso) -> Mesh` |
 | `smooth` | `taubin`, `hc_laplacian`, `bilateral` (each with a per-vertex `constrain` hook), `restore_volume`, `insert_crease_vertices`, `flip_to_creases`, `Projector`, `Smoother` |
+| `blend` | `round_joints`, `round_union`, `signed_distance`, `BlendReport` |
 | `decimate` | `decimate(mesh, pinned, &DecimateOptions)`, `decimate_ranked(mesh, rank, …)` (ranked pins, vertex ids kept), `LOCKED`; options `target_triangles`, `max_error`, `max_normal_turn_deg` (60°), `min_quality` (0.15) |
 
 ## Verification

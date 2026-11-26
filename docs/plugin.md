@@ -69,6 +69,8 @@ Inserts the result as a mesh body and, when "Create body makes a solid" is on (M
 
 The surface is made from the optimizer's smooth (filtered) densities, sampled twice as finely: members come out round instead of beaded. With the default settings this takes some seconds more than before; set "Finer surface" to 1 for the fastest mesh.
 
+**Round the joints** (Mesh, on by default): where struts meet the solid layers under supports and loads, fillets of 1.5 elements (or the radius set on the Advanced tab) are added, like a rounded boolean union in an implicit CAD system. Larger radii round more visibly but may close small openings next to the joints.
+
 **Trim dead weight** (Advanced, off by default): after Optimize, thin spikes and hooks are removed one by one as long as the part loses no more than the given percentage of its stiffness. Such pieces mostly carry some load, so expect it to remove little; the Run tab shows what was trimmed.
 
 With "Keep the body's faces exact" and "Keep its sharp edges sharp" (both on by default), the result's mounting faces lie on the design body's faces and its edges and corners on the body's edges and corners. If the sharp edges cannot be kept without the surface crossing itself, they are rounded and the Run tab says so in its warnings.
@@ -81,8 +83,8 @@ With "Keep the body's faces exact" and "Keep its sharp edges sharp" (both on by 
 | **Run** | Optimize, Create body, Re-mesh, Refresh; study status (where it runs, time estimate); the result |
 | **Settings** | Keep %, element size, element budget, thinnest member, max iterations (default 150), time limit (480 s) |
 | **Material** | Preset (aluminium 6061 and 7075, structural steel, stainless 316, Ti-6Al-4V, PLA, PETG, ABS, PA12, Custom); E, ν, density |
-| **Mesh** | Triangles (up to 50 000), smoothing passes (20), smoother (Bilateral, the default: keeps creases and gives the most accurate surface; Taubin, the fastest; HC, which keeps the volume), finer surface (2 = round members, 1 = faster), keep the body's faces exact, keep its sharp edges sharp, remove floating pieces, fill closed cavities, Create body makes a solid |
-| **Advanced** | Use TopOpt Solver when it is running; pad thickness under supports and loads; SIMP penalty; final sharpness β; move limit; surface density threshold; keep the volume while smoothing; trim dead weight costing up to a given % of stiffness (0 = off) |
+| **Mesh** | Triangles (up to 50 000), smoothing passes (20), smoother (Bilateral, the default: keeps creases and gives the most accurate surface; Taubin, the fastest; HC, which keeps the volume), finer surface (2 = round members, 1 = faster), keep the body's faces exact, keep its sharp edges sharp, round the joints to supports and loads, remove floating pieces, fill closed cavities, Create body makes a solid |
+| **Advanced** | Use TopOpt Solver when it is running; pad thickness under supports and loads; SIMP penalty; final sharpness β; move limit; surface density threshold; keep the volume while smoothing; fillet radius (0 = 1.5 elements); trim dead weight costing up to a given % of stiffness (0 = off) |
 
 Every change in the panel is one undo step. The study is stored in the design file, and the densities in the plugin's data inside the design (for Re-mesh).
 

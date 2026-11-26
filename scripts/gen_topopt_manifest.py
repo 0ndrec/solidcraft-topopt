@@ -155,6 +155,7 @@ mesh = node({"form": {"bind": "/mesh", "fields": [
     field("upsample", "Finer surface (1 = off, 2 = round members)", "number"),
     field("keep_faces", "Keep the body's faces exact", "toggle"),
     field("sharp_edges", "Keep its sharp edges sharp", "toggle"),
+    field("fillets", "Round the joints to supports and loads", "toggle"),
     field("remove_islands", "Remove floating pieces", "toggle"),
     field("fill_cavities", "Fill closed cavities", "toggle"),
     field("convert_solid", "Create body makes a solid", "toggle")]}})
@@ -166,6 +167,7 @@ adv_settings = node({"form": {"bind": "/settings", "fields": [
     field("move_limit", "Move limit per iteration", "number")]}})
 adv_mesh = node({"form": {"bind": "/mesh", "fields": [field("iso", "Surface density threshold", "number"),
                                                     field("preserve_volume", "Keep the volume while smoothing", "toggle"),
+                                                    field("fillet_radius", "Fillet radius (0 = 1.5 elements)", "length"),
                                                     field("trim_percent", "Trim dead weight costing up to % stiffness (0 = off)", "number")]}})
 advanced = node({"group": [adv_settings, adv_mesh]})
 tabs = node({"tabs": [{"label": "Setup", "child": setup}, {"label": "Run", "child": run}, {"label": "Settings", "child": basic},

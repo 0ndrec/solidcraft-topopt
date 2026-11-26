@@ -123,6 +123,28 @@ fn the_filtered_field_is_kept_and_meshed_finer() {
 }
 
 #[test]
+fn fillets_only_add_material_at_the_joints() {
+    let spec = small();
+    let job = prepare_spec(&spec, &no_files, &mut Quiet).unwrap();
+    let out = solve(&job, &mut Quiet).unwrap();
+    let surface = job.surface.as_ref().map(|(p, t)| (p.as_slice(), t.as_slice()));
+    let mut plain = job.study.clone();
+    plain.mesh.fillets = false;
+    let mut big = job.study.clone();
+    big.mesh.fillet_radius = 3.0 * out.density.grid.h;
+    let (_, without) = topopt_study::make_mesh(&plain, &out.density, surface).unwrap();
+    let (_, auto) = topopt_study::make_mesh(&job.study, &out.density, surface).unwrap();
+    let (_, larger) = topopt_study::make_mesh(&big, &out.density, surface).unwrap();
+    for r in [&without, &auto, &larger] {
+        assert!(r.mesh.ok(), "{r:?}");
+    }
+    // Fillets add material, a larger radius more, and not much of it.
+    assert!(auto.mesh.volume >= without.mesh.volume * 0.999, "{} vs {}", auto.mesh.volume, without.mesh.volume);
+    assert!(larger.mesh.volume >= auto.mesh.volume * 0.999, "{} vs {}", larger.mesh.volume, auto.mesh.volume);
+    assert!(larger.mesh.volume < without.mesh.volume * 1.15);
+}
+
+#[test]
 fn trimming_through_solve_stays_within_its_stiffness_budget() {
     let mut spec = small();
     spec.mesh.trim_percent = 2.0;

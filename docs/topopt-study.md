@@ -34,7 +34,7 @@ Spec         │ shape_mesh → voxelize(MeshCaster) → assemble → Job │   
 | `prepare_spec(spec, read_file, hooks) -> Job` | The same from a spec; `read_file(path)` returns a file's bytes (STL), so the caller decides where files come from |
 | `solve(job, hooks) -> Outcome { mesh, density, result }` | Optimize and mesh. Multigrid settings are the defaults **of the platform it runs on**, not taken from the job |
 | `run(...)` | `prepare` + `solve` in one call |
-| `make_mesh(study, density, surface) -> (Mesh, topopt_mesh::Report)` | Only the mesh, from saved densities (Re-mesh), with the study's mesh settings (smoother, upsampling, volume, sharp edges…). It meshes `Density::filtered` (the densities before projection) when present, sampled `mesh.upsample` times finer |
+| `make_mesh(study, density, surface) -> (Mesh, topopt_mesh::Report)` | Only the mesh, from saved densities (Re-mesh), with the study's mesh settings (smoother, upsampling, volume, sharp edges…). It meshes `Density::filtered` (the densities before projection) when present, sampled `mesh.upsample` times finer, and rounds the joints between the optimized material and the pads with fillets (`mesh.fillets`, `mesh.fillet_radius`) |
 | `mesh_warnings(study, report, surface_given)` | Warnings to show about such a mesh (sharp edges that had to be rounded) |
 
 ### `Hooks`
@@ -142,6 +142,7 @@ Without face numbers (just a mesh or an STL), a spec is simpler: `prepare_spec` 
 |---|---|
 | `tests/run.rs` | Box voxelization (volume within 4 %, all 6 faces sampled, no unbalanced rays); an end-to-end "support −X, load +X" study; a "normal" load equals the vector |
 | `tests/spec.rs` | The example spec solves; box, inline mesh and STL in metres (`scale` 1000) voxelize alike; keep-outs; clear region errors; JSON round trip; the filtered field is saved (pads 1, outside 0) and meshes ×2, ×1 and from older files; trimming through `solve` |
+| `tests/spec.rs` (fillets) | Fillets only add material, a larger radius more, and not much |
 | `tests/trim.rs` | A spike near a beam's free end is trimmed, the beam kept (the same spike mid-span stiffens the flange and stays) |
 | unit | `set_option` and study JSON, "next step" hints through the steps, protocol parts and heartbeat |
 

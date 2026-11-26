@@ -54,6 +54,8 @@ The matrix-free Hex8 product runs at about 2 GFLOP/s in the sandbox (Cranelift):
 
 **Round members: mesh the filtered field, finer.** The optimizer's projected densities are nearly 0 or 1 per element, so any surface through them is voxels smoothed afterwards; struts three or four elements thick come out beaded. The filtered field before the projection carries the same surface (the projection threshold is the iso value) but varies smoothly; sampled ×2 by cubic interpolation and smoothed bilaterally, strut cross-sections on a bridge fit an ellipse to 0.984 instead of 0.956. What did not work: smoothing a distance field (it closed 26 of 31 holes), mean-curvature flow (it crossed the surface on thin parts and fell back to no smoothing), stronger smoothing of the projected field alone (0.971).
 
+**Rounded joints by a rounded union of distance fields.** As implicit CAD kernels do, the optimized material and the kept parts (pads, keep-in) get exact signed distance fields, and the field is raised to their rounded union only in the fillet zone. The circular round union is used, not the polynomial smooth minimum: the latter's fillet is about 0.6 × its parameter and it adds a quarter of it along the whole contact. Without smoothing the raised field, the half-cell steps of voxel distances made the bridge's smoothing back off entirely. The default radius (1.5 elements) changes little on our examples, because the filtered field already rounds joints by about that much.
+
 **Folds are checked.** Upsampling plus crease insertion once produced triangles folded flat onto each other in a planar face: no crossing, but SolidCraft's `mesh.convert` refused the mesh ("a planar group's boundary does not enclose it"). Folds are now part of `Mesh::validate` and of the smoothing safety loop.
 
 **Thin plates along a face keep their thickness.** A face pin used to accept a vertex whose normal was parallel to the face either way, so the inner side of a one-element plate was pinned onto the face too, flattening the plate (a bridge deck: 31 % of the part's volume). A vertex is now pinned only if its outward normal agrees with the face's.
@@ -109,6 +111,9 @@ Quality:
 - [ ] Sharpen creases the optimizer makes inside the domain (feature detection on the result itself).
 - [x] Round members: filtered field, ×2 cubic upsampling, bilateral smoothing.
 - [x] Optional trimming of thin dead weight within a stiffness budget.
+- [x] Rounded joints between the optimized material and the kept parts.
+- [ ] Skeleton-based reconstruction: struts as exact cylinders (capsules) blended at the nodes.
+- [ ] Conformal lattices and ribs on surfaces.
 - [ ] Faster ×2 meshing (the smoothing and decimation of 4× more triangles dominate).
 - [ ] `plan_grid`: rounding dimensions to multiples of 4 can waste half the budget on small grids (a 4000 budget gives 1536 elements on 120×40×40); choose the dimensions closest to the budget from below.
 - [ ] Recalibrate `estimate_seconds` for the new multigrid thresholds (native estimates are high).

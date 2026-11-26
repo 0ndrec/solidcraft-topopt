@@ -136,6 +136,11 @@ pub struct MeshSettings {
     pub upsample: usize,
     /// Trim thin pieces as long as the stiffness drops by at most this many percent (0 = off).
     pub trim_percent: f64,
+    /// Round the joints where the optimized material meets the kept parts (the pads under
+    /// supports and loads, keep-in regions) with fillets.
+    pub fillets: bool,
+    /// Fillet radius, mm; 0 = 1.5 elements.
+    pub fillet_radius: f64,
 }
 
 /// Smoothers of the result mesh: id and label.
@@ -156,6 +161,8 @@ impl Default for MeshSettings {
             sharp_edges: true,
             upsample: 2,
             trim_percent: 0.0,
+            fillets: true,
+            fillet_radius: 0.0,
         }
     }
 }
@@ -399,6 +406,8 @@ impl Study {
             "mesh/sharp_edges" => m.sharp_edges = flag()?,
             "mesh/upsample" => m.upsample = pos(num()?, 1.0, 3.0)?.round() as usize,
             "mesh/trim_percent" => m.trim_percent = pos(num()?, 0.0, 10.0)?,
+            "mesh/fillets" => m.fillets = flag()?,
+            "mesh/fillet_radius" => m.fillet_radius = pos(num()?, 0.0, 1e4)?,
             other => return Err(format!("unknown setting `{other}`")),
         }
         Ok(())

@@ -17,6 +17,7 @@
 //!    corner and edge pins over face pins;
 //! 6. **validate** ([`mesh::Mesh::validate`]): every guarantee checked, not assumed.
 
+pub mod blend;
 pub mod decimate;
 pub mod field;
 mod intersect;
@@ -25,6 +26,7 @@ pub mod mesh;
 pub mod mt;
 pub mod smooth;
 
+pub use blend::{BlendReport, round_joints, round_union, signed_distance};
 pub use decimate::{DecimateOptions, decimate, decimate_ranked};
 pub use field::{Cleanup, Field, clean_components, upsample_cells, upsample_mask};
 pub use io::{read_ply, read_stl};

@@ -299,6 +299,8 @@ Elements are cubes. Grid dimensions are rounded up to multiples of 4 (of 2 when 
 | `smoother` | `"bilateral"` | `"bilateral"` (bilateral normal filtering: the most accurate surface, keeps creases), `"taubin"` (fastest) or `"hc"` (HC Laplacian, little shrinkage) |
 | `preserve_volume` | true | Offset the free surface along its normals so smoothing does not change the volume |
 | `sharp_edges` | true | With `keep_faces`: keep the domain's sharp edges and corners exactly (crease vertices inserted on them, corners fixed) |
+| `fillets` | true | Round the joints where the optimized material meets the pads under supports and loads and `keep_in` regions with fillets ([topopt-mesh.md](topopt-mesh.md#rounded-joints-blend)) |
+| `fillet_radius` | 0 | Fillet radius, mm; 0 = 1.5 elements. Larger radii round more but can close small openings near the joints |
 | `trim_percent` | 0 | Trim thin dead weight as long as the stiffness drops by at most this many percent; 0 = off ([§4.10](#410-trimming-thin-dead-weight)) |
 | `convert_solid` | true | Not used by specs (a plugin flag) |
 

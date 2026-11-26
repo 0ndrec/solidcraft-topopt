@@ -186,6 +186,8 @@ pub fn show(study: &Study, body: Option<&BodyInfo>, solver: &SolverView) -> Resu
     d.push(flag("/mesh/sharp_edges".into(), ms.sharp_edges));
     d.push(number("/mesh/upsample".into(), ms.upsample as f64));
     d.push(number("/mesh/trim_percent".into(), ms.trim_percent));
+    d.push(flag("/mesh/fillets".into(), ms.fillets));
+    d.push(number("/mesh/fillet_radius".into(), ms.fillet_radius));
 
     let mut rows: Vec<(&str, String)> = Vec::new();
     let ready = solver.ready.as_ref().and_then(|f| f.result.clone());

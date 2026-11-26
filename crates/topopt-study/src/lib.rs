@@ -288,6 +288,12 @@ pub fn make_mesh(study: &Study, density: &Density, surface: Surface) -> Result<(
             *c = 0.0;
         }
     }
+    // Fillets where the optimized material meets the kept parts (pads, keep-in regions).
+    if study.mesh.fillets {
+        let r = if study.mesh.fillet_radius > 0.0 { study.mesh.fillet_radius } else { 1.5 * g.h };
+        let material: Vec<bool> = (0..cells.len()).map(|c| cells[c] >= study.mesh.iso && !pads[c] && inside[c]).collect();
+        topopt_mesh::round_joints(fine, g.h / k as f64, &mut cells, study.mesh.iso, &material, &pads, &inside, r);
+    }
     let field = Field::from_cells(fine, g.h / k as f64, g.origin, &cells, 1);
     let anchors = field.cell_mask(fine, 1, &pads);
     let projector = match (study.mesh.keep_faces, surface) {
