@@ -151,7 +151,11 @@ material = node({"form": {"bind": "/material", "fields": [
 mesh = node({"form": {"bind": "/mesh", "fields": [
     field("triangles", "Triangles (up to 50 000)", "number"),
     field("smoothing", "Smoothing passes", "number"),
-    field("smoother", "Smoother", "choice", ["Taubin", "HC (keeps volume)", "Bilateral (keeps creases)"]),
+    # The smoother as three toggles that act as radio buttons: SolidCraft's panel dropdowns
+    # (0.49-0.50) never send a change event, so a "choice" field cannot be changed.
+    field("smoother_bilateral", "Smoother: bilateral (keeps creases)", "toggle"),
+    field("smoother_taubin", "Smoother: Taubin (fastest)", "toggle"),
+    field("smoother_hc", "Smoother: HC (keeps volume)", "toggle"),
     field("upsample", "Finer surface (1 = off, 2 = round members)", "number"),
     field("keep_faces", "Keep the body's faces exact", "toggle"),
     field("sharp_edges", "Keep its sharp edges sharp", "toggle"),
@@ -177,7 +181,7 @@ nodes[root] = {"widget": {"group": [next_row, tabs]}}
 manifest = {
     "id": "topopt",
     "name": "TopOpt",
-    "version": "0.8.0",
+    "version": "0.8.1",
     "description": "Topology optimization: pick a design body, supports and loads; get a lightweight, stiff part as a mesh or solid.",
     "capabilities": ["commands@0.2", "ui@0.1", "storage@0.1", "forms@0.1"],
     "runtime": {

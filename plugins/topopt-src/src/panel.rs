@@ -180,8 +180,10 @@ pub fn show(study: &Study, body: Option<&BodyInfo>, solver: &SolverView) -> Resu
     d.push(flag("/mesh/remove_islands".into(), ms.remove_islands));
     d.push(flag("/mesh/fill_cavities".into(), ms.fill_cavities));
     d.push(flag("/mesh/convert_solid".into(), ms.convert_solid));
-    let smoother = topopt_study::SMOOTHERS.iter().find(|x| x.0 == ms.smoother).map_or("Taubin", |x| x.1);
-    d.push(text("/mesh/smoother".into(), smoother));
+    // One toggle per smoother, ticked for the current one (see the manifest generator).
+    for (id, _) in topopt_study::SMOOTHERS {
+        d.push(flag(format!("/mesh/smoother_{id}"), ms.smoother == id));
+    }
     d.push(flag("/mesh/preserve_volume".into(), ms.preserve_volume));
     d.push(flag("/mesh/sharp_edges".into(), ms.sharp_edges));
     d.push(number("/mesh/upsample".into(), ms.upsample as f64));

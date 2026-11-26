@@ -404,6 +404,15 @@ impl Study {
                 let id = SMOOTHERS.iter().find(|x| x.0 == text || x.1 == text).ok_or(format!("unknown smoother `{text}`"))?.0;
                 m.smoother = id.into();
             }
+            // The panel's radio toggles: ticking one selects it; unticking the current one keeps
+            // it (one smoother is always on).
+            k if k.starts_with("mesh/smoother_") => {
+                let id = &k["mesh/smoother_".len()..];
+                let id = SMOOTHERS.iter().find(|x| x.0 == id).ok_or(format!("unknown smoother `{id}`"))?.0;
+                if flag()? {
+                    m.smoother = id.into();
+                }
+            }
             "mesh/preserve_volume" => m.preserve_volume = flag()?,
             "mesh/sharp_edges" => m.sharp_edges = flag()?,
             "mesh/upsample" => m.upsample = pos(num()?, 1.0, 3.0)?.round() as usize,
@@ -454,6 +463,19 @@ mod tests {
         s.set_option("mesh/convert_solid", &json!({"Flag": false})).unwrap();
         assert!(s.set_option("settings/volfrac", &json!(2.0)).is_err());
         assert!(s.set_option("nope", &json!(1)).is_err());
+        // The smoother: radio toggles from the panel (as the host sends them), or a name.
+        assert_eq!(s.mesh.smoother, "bilateral");
+        s.set_option("/mesh/smoother_hc", &json!({"flag": true})).unwrap();
+        assert_eq!(s.mesh.smoother, "hc");
+        s.set_option("/mesh/smoother_hc", &json!({"flag": false})).unwrap();
+        assert_eq!(s.mesh.smoother, "hc", "unticking the current smoother keeps it");
+        s.set_option("/mesh/smoother_bilateral", &json!({"flag": false})).unwrap();
+        assert_eq!(s.mesh.smoother, "hc");
+        s.set_option("/mesh/smoother_taubin", &json!({"flag": true})).unwrap();
+        assert_eq!(s.mesh.smoother, "taubin");
+        s.set_option("mesh/smoother", &json!({"text": "HC (keeps volume)"})).unwrap();
+        assert_eq!(s.mesh.smoother, "hc");
+        assert!(s.set_option("/mesh/smoother_fast", &json!({"flag": true})).is_err());
         let face = FaceRef { body: "B".into(), index: 2, point: None, label: None };
         let a = s.add(Condition::Support { id: 0, faces: vec![face.clone()], dirs: [true; 3] }, None);
         let b = s.add(Condition::Load { id: 0, faces: vec![face], mode: "vector".into(), force: [0., 0., -1.], magnitude: 0., case: 1 }, None);
