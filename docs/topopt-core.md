@@ -17,6 +17,7 @@ The problem: **minimum compliance under a volume constraint**. Find the material
 | `filter` | Density filter (a cone of radius `rmin`), Heaviside projection and its derivative |
 | `opt` | The optimization loop: `Optimizer`, `Settings`, `Iteration`, `Outcome` |
 | `backend` | What solves the linear systems: the `LinearSolver` trait, `CpuSolver`, `SolverFactory` |
+| `stress` | Checking a design: von Mises stress at element centres, the largest displacement, quantiles |
 | `par` | Parallel loops (rayon, feature `parallel`) or plain loops |
 
 ## Units and grid
@@ -100,6 +101,7 @@ let densities = &opt.x_phys; // physical densities 0…1 per element
 | `history: Vec<Iteration>` | `iter`, `compliance`, `volume`, `change`, `beta`, `grayness`, `cg_iterations`, `cg_worst_residual` |
 | `mg_levels()` | The multigrid level grids (diagnostics) |
 | `solver_name()`, `solver_note()` | What solves the linear systems; why a GPU was not used, if so |
+| `check(&design) -> Vec<CaseCheck>` | Analyses a given design (usually the result made 0/1) and returns per load case its compliance (N·mm), largest displacement (mm) and the von Mises stress of every element (MPa) |
 
 ### One iteration
 
@@ -161,6 +163,8 @@ Other measurements:
 | Coloured parallel `K·u` against the sequential one; assembled matrix symmetric | equal |
 | Hex8: symmetric, zero energy for rigid modes, exact uniaxial-stretch energy | holds |
 | Element-wise Galerkin against assembled `Pᵀ K P` | exact |
+| Von Mises stress of uniaxial tension and of pure shear (`stress.rs`) | exact (E·ε and √3·τ) |
+| `check` on a solid 60×6×6 mm PETG cantilever, 0.5 mm elements, 10 N at the tip, against beam theory (`tests/stress.rs`) | tip deflection 3.154 mm against 3.201 (Euler-Bernoulli + Timoshenko shear); mid-span outer-fibre stress 7.67 MPa against M·c/I = 7.64 |
 
 ```sh
 cargo +stable-x86_64-pc-windows-gnu test --release -p topopt-core

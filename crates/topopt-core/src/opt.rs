@@ -105,6 +105,17 @@ pub struct Evaluation {
     pub stats: Vec<PcgStats>,
 }
 
+/// One load case of [`Optimizer::check`].
+#[derive(Clone, Debug)]
+pub struct CaseCheck {
+    /// F·u, N·mm.
+    pub compliance: f64,
+    /// The largest nodal displacement, mm.
+    pub max_displacement: f64,
+    /// Von Mises stress per element, MPa.
+    pub von_mises: Vec<f64>,
+}
+
 pub struct Optimizer {
     pub problem: Problem,
     pub settings: Settings,
@@ -278,6 +289,26 @@ impl Optimizer {
             }
         }
         Ok((compliance, energy))
+    }
+
+    /// Analyses a given design (physical densities, one per element; usually the result made
+    /// 0 or 1) and reports, per load case, its compliance, largest displacement and von Mises
+    /// stresses (see [`crate::stress`]). The design stays in `x_phys`.
+    pub fn check(&mut self, phys: &[f64]) -> Result<Vec<CaseCheck>, String> {
+        if phys.len() != self.problem.grid.nel() {
+            return Err("check: one density per element".into());
+        }
+        self.x_phys = phys.to_vec();
+        self.solve()?;
+        let emod = self.moduli(&self.x_phys);
+        let m = self.problem.material;
+        Ok((0..self.forces.len())
+            .map(|c| CaseCheck {
+                compliance: dot(&self.forces[c], &self.u[c]),
+                max_displacement: crate::stress::max_displacement(&self.u[c]),
+                von_mises: crate::stress::von_mises(&self.problem.grid, m.e, m.nu, &emod, &self.u[c]),
+            })
+            .collect())
     }
 
     /// Compliance and its gradients with respect to the design variables at the current design.

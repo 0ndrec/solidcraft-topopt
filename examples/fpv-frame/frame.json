@@ -1,0 +1,474 @@
+[
+ {
+  "command": "sketch.create",
+  "params": {
+   "plane": "XY",
+   "name": "Outline"
+  }
+ },
+ {
+  "command": "sketch.rectangle.center",
+  "params": {
+   "center": [
+    0,
+    0
+   ],
+   "corner": [
+    23.0,
+    23.0
+   ]
+  }
+ },
+ {
+  "command": "sketch.slot.center_to_center",
+  "params": {
+   "p0": [
+    -42.426406871192846,
+    -42.426406871192846
+   ],
+   "p1": [
+    42.426406871192846,
+    42.426406871192846
+   ],
+   "width": 22.0
+  }
+ },
+ {
+  "command": "sketch.slot.center_to_center",
+  "params": {
+   "p0": [
+    -42.426406871192846,
+    42.426406871192846
+   ],
+   "p1": [
+    42.426406871192846,
+    -42.426406871192846
+   ],
+   "width": 22.0
+  }
+ },
+ {
+  "command": "sketch.finish",
+  "params": {}
+ },
+ {
+  "command": "solid.extrude",
+  "params": {
+   "distance": 5.0,
+   "name": "Plate"
+  }
+ },
+ {
+  "command": "body.rename",
+  "params": {
+   "body": "Body1",
+   "name": "Frame"
+  }
+ },
+ {
+  "command": "solid.cylinder",
+  "params": {
+   "diameter": 22.0,
+   "height": 1.5,
+   "base": [
+    42.426406871192846,
+    42.426406871192846,
+    5.0
+   ],
+   "operation": "join",
+   "name": "Seat FR"
+  }
+ },
+ {
+  "command": "solid.cylinder",
+  "params": {
+   "diameter": 22.0,
+   "height": 1.5,
+   "base": [
+    -42.426406871192846,
+    42.426406871192846,
+    5.0
+   ],
+   "operation": "join",
+   "name": "Seat FL"
+  }
+ },
+ {
+  "command": "solid.cylinder",
+  "params": {
+   "diameter": 22.0,
+   "height": 1.5,
+   "base": [
+    -42.426406871192846,
+    -42.426406871192846,
+    5.0
+   ],
+   "operation": "join",
+   "name": "Seat RL"
+  }
+ },
+ {
+  "command": "solid.cylinder",
+  "params": {
+   "diameter": 22.0,
+   "height": 1.5,
+   "base": [
+    42.426406871192846,
+    -42.426406871192846,
+    5.0
+   ],
+   "operation": "join",
+   "name": "Seat RR"
+  }
+ },
+ {
+  "command": "solid.cylinder",
+  "params": {
+   "diameter": 5.5,
+   "height": 8.5,
+   "base": [
+    42.426406871192846,
+    42.426406871192846,
+    -1
+   ],
+   "operation": "cut",
+   "name": "Shaft FR"
+  }
+ },
+ {
+  "command": "solid.cylinder",
+  "params": {
+   "diameter": 2.2,
+   "height": 8.5,
+   "base": [
+    48.426406871192846,
+    48.426406871192846,
+    -1
+   ],
+   "operation": "cut",
+   "name": "Motor hole FR1"
+  }
+ },
+ {
+  "command": "solid.cylinder",
+  "params": {
+   "diameter": 2.2,
+   "height": 8.5,
+   "base": [
+    36.426406871192846,
+    48.426406871192846,
+    -1
+   ],
+   "operation": "cut",
+   "name": "Motor hole FR2"
+  }
+ },
+ {
+  "command": "solid.cylinder",
+  "params": {
+   "diameter": 2.2,
+   "height": 8.5,
+   "base": [
+    36.426406871192846,
+    36.426406871192846,
+    -1
+   ],
+   "operation": "cut",
+   "name": "Motor hole FR3"
+  }
+ },
+ {
+  "command": "solid.cylinder",
+  "params": {
+   "diameter": 2.2,
+   "height": 8.5,
+   "base": [
+    48.426406871192846,
+    36.426406871192846,
+    -1
+   ],
+   "operation": "cut",
+   "name": "Motor hole FR4"
+  }
+ },
+ {
+  "command": "solid.cylinder",
+  "params": {
+   "diameter": 5.5,
+   "height": 8.5,
+   "base": [
+    -42.426406871192846,
+    42.426406871192846,
+    -1
+   ],
+   "operation": "cut",
+   "name": "Shaft FL"
+  }
+ },
+ {
+  "command": "solid.cylinder",
+  "params": {
+   "diameter": 2.2,
+   "height": 8.5,
+   "base": [
+    -36.426406871192846,
+    48.426406871192846,
+    -1
+   ],
+   "operation": "cut",
+   "name": "Motor hole FL1"
+  }
+ },
+ {
+  "command": "solid.cylinder",
+  "params": {
+   "diameter": 2.2,
+   "height": 8.5,
+   "base": [
+    -48.426406871192846,
+    48.426406871192846,
+    -1
+   ],
+   "operation": "cut",
+   "name": "Motor hole FL2"
+  }
+ },
+ {
+  "command": "solid.cylinder",
+  "params": {
+   "diameter": 2.2,
+   "height": 8.5,
+   "base": [
+    -48.426406871192846,
+    36.426406871192846,
+    -1
+   ],
+   "operation": "cut",
+   "name": "Motor hole FL3"
+  }
+ },
+ {
+  "command": "solid.cylinder",
+  "params": {
+   "diameter": 2.2,
+   "height": 8.5,
+   "base": [
+    -36.426406871192846,
+    36.426406871192846,
+    -1
+   ],
+   "operation": "cut",
+   "name": "Motor hole FL4"
+  }
+ },
+ {
+  "command": "solid.cylinder",
+  "params": {
+   "diameter": 5.5,
+   "height": 8.5,
+   "base": [
+    -42.426406871192846,
+    -42.426406871192846,
+    -1
+   ],
+   "operation": "cut",
+   "name": "Shaft RL"
+  }
+ },
+ {
+  "command": "solid.cylinder",
+  "params": {
+   "diameter": 2.2,
+   "height": 8.5,
+   "base": [
+    -36.426406871192846,
+    -36.426406871192846,
+    -1
+   ],
+   "operation": "cut",
+   "name": "Motor hole RL1"
+  }
+ },
+ {
+  "command": "solid.cylinder",
+  "params": {
+   "diameter": 2.2,
+   "height": 8.5,
+   "base": [
+    -48.426406871192846,
+    -36.426406871192846,
+    -1
+   ],
+   "operation": "cut",
+   "name": "Motor hole RL2"
+  }
+ },
+ {
+  "command": "solid.cylinder",
+  "params": {
+   "diameter": 2.2,
+   "height": 8.5,
+   "base": [
+    -48.426406871192846,
+    -48.426406871192846,
+    -1
+   ],
+   "operation": "cut",
+   "name": "Motor hole RL3"
+  }
+ },
+ {
+  "command": "solid.cylinder",
+  "params": {
+   "diameter": 2.2,
+   "height": 8.5,
+   "base": [
+    -36.426406871192846,
+    -48.426406871192846,
+    -1
+   ],
+   "operation": "cut",
+   "name": "Motor hole RL4"
+  }
+ },
+ {
+  "command": "solid.cylinder",
+  "params": {
+   "diameter": 5.5,
+   "height": 8.5,
+   "base": [
+    42.426406871192846,
+    -42.426406871192846,
+    -1
+   ],
+   "operation": "cut",
+   "name": "Shaft RR"
+  }
+ },
+ {
+  "command": "solid.cylinder",
+  "params": {
+   "diameter": 2.2,
+   "height": 8.5,
+   "base": [
+    48.426406871192846,
+    -36.426406871192846,
+    -1
+   ],
+   "operation": "cut",
+   "name": "Motor hole RR1"
+  }
+ },
+ {
+  "command": "solid.cylinder",
+  "params": {
+   "diameter": 2.2,
+   "height": 8.5,
+   "base": [
+    36.426406871192846,
+    -36.426406871192846,
+    -1
+   ],
+   "operation": "cut",
+   "name": "Motor hole RR2"
+  }
+ },
+ {
+  "command": "solid.cylinder",
+  "params": {
+   "diameter": 2.2,
+   "height": 8.5,
+   "base": [
+    36.426406871192846,
+    -48.426406871192846,
+    -1
+   ],
+   "operation": "cut",
+   "name": "Motor hole RR3"
+  }
+ },
+ {
+  "command": "solid.cylinder",
+  "params": {
+   "diameter": 2.2,
+   "height": 8.5,
+   "base": [
+    48.426406871192846,
+    -48.426406871192846,
+    -1
+   ],
+   "operation": "cut",
+   "name": "Motor hole RR4"
+  }
+ },
+ {
+  "command": "solid.cylinder",
+  "params": {
+   "diameter": 2.2,
+   "height": 8.5,
+   "base": [
+    10.0,
+    10.0,
+    -1
+   ],
+   "operation": "cut",
+   "name": "Stack hole 1"
+  }
+ },
+ {
+  "command": "solid.cylinder",
+  "params": {
+   "diameter": 2.2,
+   "height": 8.5,
+   "base": [
+    -10.0,
+    10.0,
+    -1
+   ],
+   "operation": "cut",
+   "name": "Stack hole 2"
+  }
+ },
+ {
+  "command": "solid.cylinder",
+  "params": {
+   "diameter": 2.2,
+   "height": 8.5,
+   "base": [
+    -10.0,
+    -10.0,
+    -1
+   ],
+   "operation": "cut",
+   "name": "Stack hole 3"
+  }
+ },
+ {
+  "command": "solid.cylinder",
+  "params": {
+   "diameter": 2.2,
+   "height": 8.5,
+   "base": [
+    10.0,
+    -10.0,
+    -1
+   ],
+   "operation": "cut",
+   "name": "Stack hole 4"
+  }
+ },
+ {
+  "command": "inspect.measure",
+  "params": {
+   "bodies": [
+    "Frame"
+   ]
+  }
+ },
+ {
+  "command": "model.faces",
+  "params": {
+   "body": "Frame"
+  }
+ }
+]

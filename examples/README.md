@@ -1,5 +1,11 @@
 # Example studies
 
+**In SolidCraft, step by step:** [a lighter 3-inch FPV frame in PETG](fpv-frame/README.md): a solid blank, the loads of flight worked out, the study in the TopOpt panel, the result checked for deflection and stress. 69 % lighter, safety factor 4 at the peak.
+
+<p align="center"><img src="../docs/images/fpv-result.png" alt="The optimized FPV frame" width="60%"></p>
+
+**For `topopt-solver`:**
+
 Specs for `topopt-solver` ([format](../docs/topopt-solver.md#4-the-spec-format)). Solve one with:
 
 ```sh

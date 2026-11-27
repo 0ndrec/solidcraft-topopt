@@ -381,7 +381,11 @@ Element order: index `i + nx·(j + ny·k)`; the element's centre is `origin + h�
   "inserted": false,
   "warnings": [],
   "trimmed": 0.0,
-  "solver": "CPU, 6 threads"
+  "solver": "CPU, 6 threads",
+  "max_displacement_mm": 0.0123,
+  "stress_p99_mpa": 21.4,
+  "stress_max_mpa": 48.0,
+  "cases": [{"case": 1, "compliance": 109.79, "max_displacement_mm": 0.0123, "stress_p99_mpa": 21.4, "stress_max_mpa": 48.0}]
 }
 ```
 
@@ -394,10 +398,13 @@ Element order: index `i + nx·(j + ny·k)`; the element's centre is `origin + h�
 | `genus` | Number of through-holes in the part: a rough measure of shape complexity |
 | `elements`, `grid`, `h` | The analysis grid |
 | `seconds` | Total time: voxelization, optimization, mesh |
-| `stl` | Where the mesh was written (a historical name: it may be PLY). Empty with `--no-files` |
+| `stl` | Where the mesh was written (a historical name: it may be PLY). Empty with `--no-files`, and when the mesh could not be made: the densities are still written, a warning says why, and `remesh` with other mesh settings makes the mesh |
 | `inserted` | Used by the plugin; always `false` here |
 | `trimmed` | Share of the material trimmed as dead weight (`mesh.trim_percent`), 0 when off |
 | `solver` | What solved the linear systems: `CPU, 6 threads`, or a GPU's name with `topopt-cuda-solver` |
+| `max_displacement_mm` | The result checked against its loads (solid where the density reaches the iso value): the largest displacement, mm, worst over the load cases |
+| `stress_p99_mpa`, `stress_max_mpa` | Von Mises stress in that material, MPa, worst over the load cases: 99 % of the material is below the first; the second is the single highest voxel, which supports and stair-stepped corners exaggerate. Compare the 99th percentile with the material's strength divided by a safety factor |
+| `cases` | The same per load case, in case-number order, with each case's compliance |
 | `warnings` | Open domain, too few elements across, time limit reached, sharp edges that had to be rounded… **Show these to the pipeline's user** |
 
 ## 6. Progress, exit codes, cancelling

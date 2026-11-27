@@ -1,8 +1,8 @@
 # The TopOpt plugin for SolidCraft — user guide
 
-The TopOpt plugin (v0.10.0, SolidCraft 0.49.1 and 0.50) does **topology optimization** in your model. You say where material may go, where the part is held and where it is pushed; the plugin finds the stiffest shape from the share of material you allow and inserts it into the model as a body.
+The TopOpt plugin (v0.11.0, SolidCraft 0.49.1 and 0.50) does **topology optimization** in your model. You say where material may go, where the part is held and where it is pushed; the plugin finds the stiffest shape from the share of material you allow and inserts it into the model as a body.
 
-![The TopOpt panel and ribbon in SolidCraft](images/solidcraft-panel.png)
+![The TopOpt panel and ribbon in SolidCraft, with the FPV frame study (examples/fpv-frame)](images/solidcraft-panel.png)
 
 ## Install
 
@@ -75,9 +75,11 @@ Optimize is a long-running job: progress and Cancel are in the operations panel 
 
 ### 5. Result — **Create body**
 
-Inserts the result as a mesh body and, when "Create body makes a solid" is on (Mesh tab), converts it to a solid. The **Run** tab summarizes the run: outcome, iterations and time, volume share, mass, compliance (lower is stiffer), grid, triangles and genus (through-holes), warnings.
+Inserts the result as a mesh body and, when "Create body makes a solid" is on (Mesh tab), converts it to a solid. The **Run** tab shows the result first: mass, the deflection and stress check (below), volume share and compliance (lower is stiffer); then the run (outcome, iterations and time), grid, triangles, genus (through-holes) and warnings, and the study's status. It also shows how the result holds up: the result, made solid where it has material, is analysed once more under every load case, giving its **largest deflection** in mm and the **von Mises stress** in MPa (99 % of the material is below the first number; the second is the highest single voxel). Compare the stress with your material's strength divided by a safety factor; for a 3D print, use the strength across layers.
 
-**Re-mesh** makes a new mesh from the saved densities with other Mesh settings (triangles, smoothing, smoother, finer surface, sharp edges, threshold) without optimizing again. Trimming happens during Optimize (Re-mesh keeps what was trimmed).
+![The Run tab after the FPV frame study: mass, deflection and stress, per load case too](images/fpv-panel-run.png)
+
+**Re-mesh** makes a new mesh from the saved densities with other Mesh settings (triangles, smoothing, smoother, finer surface, sharp edges, threshold) without optimizing again. Trimming happens during Optimize (Re-mesh keeps what was trimmed). If a run's mesh cannot be made, the optimization is not lost: the densities are kept, a warning says why, and Re-mesh with other settings (fewer smoothing passes, another smoother) makes the mesh.
 
 The surface is made from the optimizer's smooth (filtered) densities, sampled twice as finely: members come out round instead of beaded. With the default settings this takes some seconds more than before; set "Finer surface" to 1 for the fastest mesh.
 

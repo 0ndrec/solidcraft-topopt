@@ -168,9 +168,32 @@ pub fn graft_kept_faces(mesh: &Mesh, surface: (&[[f64; 3]], &[[u32; 3]]), keep: 
     (current, report)
 }
 
-/// Flat gaps by ear clipping (ladders elsewhere); if that fails validation, ladders everywhere.
+/// How the gaps between the result and an outline are filled (each falls back to a ladder).
+#[derive(Clone, Copy, PartialEq)]
+enum Fill {
+    /// Ear clipping in the gap's plane when it is flat, else in its ribbon coordinates.
+    Ears,
+    /// Ear clipping in ribbon coordinates.
+    Ribbon,
+    /// Ladders only.
+    Ladder,
+}
+
+/// Grafts with each way of filling the gaps in turn, then with wider cuts, until one passes
+/// validation. The first failure is the one reported.
 fn graft_either(mesh: &Mesh, original: &Original, keep: &[bool], h: f64, check: bool) -> Result<(Mesh, Stats), String> {
-    graft(mesh, original, keep, h, check, true).or_else(|e| graft(mesh, original, keep, h, check, false).map_err(|_| e))
+    let mut first = None;
+    for band in [0.0, 0.5 * h, 1.0 * h] {
+        for mode in [Fill::Ears, Fill::Ribbon, Fill::Ladder] {
+            match graft(mesh, original, keep, h, check, mode, band) {
+                Ok(done) => return Ok(done),
+                Err(e) => {
+                    first.get_or_insert(e);
+                }
+            }
+        }
+    }
+    Err(first.unwrap_or_default())
 }
 
 #[derive(Default)]
@@ -228,6 +251,96 @@ fn boundary_loops(triangles: &[[u32; 3]]) -> Result<Vec<Vec<u32>>, String> {
     Ok(loops)
 }
 
+/// Ear clipping of a simple polygon `poly` given by its points `q` in a plane, counter-clockwise:
+/// the best-shaped ear first (area over the squared longest edge). `None` when it is not simple.
+fn ear_clip(poly: &[u32], q: &[[f64; 2]]) -> Option<Vec<[u32; 3]>> {
+    let cross2 = |a: [f64; 2], b: [f64; 2], c: [f64; 2]| (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+    let scale = q.iter().map(|p| p[0].abs().max(p[1].abs())).fold(0.0, f64::max).max(1e-9);
+    let eps = 1e-12 * scale * scale;
+    let n = q.len();
+    if n < 3 {
+        return None;
+    }
+    // Only a simple polygon: no two edges that are not neighbours may cross or touch.
+    let orient = |a: [f64; 2], b: [f64; 2], c: [f64; 2]| {
+        let v = cross2(a, b, c);
+        if v > eps { 1 } else if v < -eps { -1 } else { 0 }
+    };
+    for i in 0..n {
+        for j in i + 2..n {
+            if i == 0 && j == n - 1 {
+                continue;
+            }
+            let (a, b, c, d) = (q[i], q[(i + 1) % n], q[j], q[(j + 1) % n]);
+            let (o1, o2, o3, o4) = (orient(a, b, c), orient(a, b, d), orient(c, d, a), orient(c, d, b));
+            if o1 * o2 <= 0 && o3 * o4 <= 0 && !(o1 == 0 && o2 == 0) {
+                return None;
+            }
+        }
+    }
+    let mut idx: Vec<usize> = (0..n).collect();
+    let mut tris = Vec::with_capacity(n - 2);
+    while idx.len() > 3 {
+        let m = idx.len();
+        let mut best: Option<(usize, f64)> = None;
+        for k in 0..m {
+            let (i0, i1, i2) = (idx[(k + m - 1) % m], idx[k], idx[(k + 1) % m]);
+            let (p0, p1, p2) = (q[i0], q[i1], q[i2]);
+            let area = cross2(p0, p1, p2);
+            if area <= eps {
+                continue;
+            }
+            let blocked = idx.iter().any(|&j| {
+                if j == i0 || j == i1 || j == i2 || q[j] == p0 || q[j] == p1 || q[j] == p2 {
+                    return false;
+                }
+                let pj = q[j];
+                cross2(p0, p1, pj) >= -eps && cross2(p1, p2, pj) >= -eps && cross2(p2, p0, pj) >= -eps
+            });
+            if blocked {
+                continue;
+            }
+            // Shape: area over the squared longest edge.
+            let e = |a: [f64; 2], b: [f64; 2]| (a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2);
+            let quality = area / e(p0, p1).max(e(p1, p2)).max(e(p2, p0));
+            if best.is_none_or(|b| quality > b.1) {
+                best = Some((k, quality));
+            }
+        }
+        let (k, _) = best?;
+        let m = idx.len();
+        tris.push([poly[idx[(k + m - 1) % m]], poly[idx[k]], poly[idx[(k + 1) % m]]]);
+        idx.remove(k);
+    }
+    if cross2(q[idx[0]], q[idx[1]], q[idx[2]]) <= eps {
+        return None;
+    }
+    tris.push([poly[idx[0]], poly[idx[1]], poly[idx[2]]]);
+    Some(tris)
+}
+
+/// A vertex with more than one boundary half-edge leaving it (two holes touching there), if any.
+fn pinched_vertex(triangles: &[[u32; 3]]) -> Option<u32> {
+    let mut half: std::collections::HashSet<(u32, u32)> = std::collections::HashSet::new();
+    for t in triangles {
+        for e in 0..3 {
+            half.insert((t[e], t[(e + 1) % 3]));
+        }
+    }
+    let mut out: HashMap<u32, u32> = HashMap::new();
+    let mut found = None;
+    for &(a, b) in &half {
+        if !half.contains(&(b, a)) {
+            let n = out.entry(a).or_insert(0);
+            *n += 1;
+            if *n > 1 {
+                found = Some(found.map_or(a, |f: u32| f.min(a)));
+            }
+        }
+    }
+    found
+}
+
 /// Closest point of segment `a`–`b` to `p`: (parameter in [0, 1], distance).
 fn closest_on_segment(p: [f64; 3], a: [f64; 3], b: [f64; 3]) -> (f64, f64) {
     let ab = sub(b, a);
@@ -275,6 +388,9 @@ impl Outline {
 struct Stitch {
     positions: Vec<[f64; 3]>,
     triangles: Vec<[u32; 3]>,
+    /// Per triangle: one of the original surface's (or a piece of one), which mending must not
+    /// change.
+    patch: Vec<bool>,
     half: HashMap<(u32, u32), usize>,
 }
 
@@ -311,6 +427,7 @@ impl Stitch {
                 t
             } else {
                 self.triangles.push(nt);
+                self.patch.push(self.patch[t]);
                 self.triangles.len() - 1
             };
             for e in 0..3 {
@@ -318,6 +435,131 @@ impl Stitch {
             }
         }
         Ok(())
+    }
+
+    /// Mends folds (neighbours folded flat onto each other) and slivers along the seam by edge
+    /// flips: an edge of a folded or degenerate triangle is flipped when both new triangles face
+    /// the way the triangles around them do; an edge between two vertices on one point is
+    /// collapsed. The original surface's triangles are never changed. Returns the repairs made.
+    fn mend(&mut self, tiny: f64) -> usize {
+        let mut flips = 0;
+        for _ in 0..200 {
+            let tmp = Mesh { positions: self.positions.clone(), triangles: self.triangles.clone() };
+            let mut bad: Vec<u32> = crate::mesh::folded_triangles(&tmp);
+            bad.extend(crate::mesh::degenerate_triangles(&tmp));
+            if bad.is_empty() {
+                break;
+            }
+            // Two vertices on one point (a vertex of the result not welded to the outline point
+            // it sits on): collapse the edge between them, keeping the original surface's vertex.
+            let on_patch: std::collections::HashSet<u32> =
+                self.triangles.iter().zip(&self.patch).filter(|(_, p)| **p).flat_map(|(t, _)| *t).collect();
+            let mut collapse = None;
+            'pairs: for &t in &bad {
+                let tri = self.triangles[t as usize];
+                for e in 0..3 {
+                    let (a, b) = (tri[e], tri[(e + 1) % 3]);
+                    if norm(sub(self.positions[a as usize], self.positions[b as usize])) <= tiny {
+                        if !on_patch.contains(&a) {
+                            collapse = Some((a, b));
+                            break 'pairs;
+                        }
+                        if !on_patch.contains(&b) {
+                            collapse = Some((b, a));
+                            break 'pairs;
+                        }
+                    }
+                }
+            }
+            if let Some((gone, into)) = collapse {
+                let mut kept = Vec::with_capacity(self.triangles.len());
+                let mut flags = Vec::with_capacity(self.triangles.len());
+                for (t, &p) in self.triangles.iter().zip(&self.patch) {
+                    let t = t.map(|v| if v == gone { into } else { v });
+                    if t[0] != t[1] && t[1] != t[2] && t[0] != t[2] {
+                        kept.push(t);
+                        flags.push(p);
+                    }
+                }
+                self.triangles = kept;
+                self.patch = flags;
+                flips += 1;
+                continue;
+            }
+            self.index();
+            let mut star: HashMap<u32, Vec<usize>> = HashMap::new();
+            for (k, t) in self.triangles.iter().enumerate() {
+                for &v in t {
+                    star.entry(v).or_default().push(k);
+                }
+            }
+            let normal = |s: &Self, t: [u32; 3]| {
+                let p = |v: u32| s.positions[v as usize];
+                cross(sub(p(t[1]), p(t[0])), sub(p(t[2]), p(t[0])))
+            };
+            let mut done = false;
+            'search: for &t in &bad {
+                let tri = self.triangles[t as usize];
+                for e in 0..3 {
+                    let (u, v, a) = (tri[e], tri[(e + 1) % 3], tri[(e + 2) % 3]);
+                    let Some(&t2) = self.half.get(&(v, u)) else { continue };
+                    if self.patch[t as usize] || self.patch[t2] {
+                        continue;
+                    }
+                    let Some(b) = self.triangles[t2].iter().copied().find(|&c| c != u && c != v) else { continue };
+                    if a == b || self.half.contains_key(&(a, b)) || self.half.contains_key(&(b, a)) {
+                        continue;
+                    }
+                    // The way the surface faces here: the triangles around u and v but these two.
+                    let mut r = [0.0; 3];
+                    let mut around: Vec<usize> = star.get(&u).into_iter().chain(star.get(&v)).flatten().copied().collect();
+                    around.sort_unstable();
+                    around.dedup();
+                    for k in around {
+                        if k != t as usize && k != t2 {
+                            let n = normal(self, self.triangles[k]);
+                            r = [r[0] + n[0], r[1] + n[1], r[2] + n[2]];
+                        }
+                    }
+                    let (n1, n2) = (normal(self, [u, b, a]), normal(self, [b, v, a]));
+                    let l = (norm(n1), norm(n2), norm(r));
+                    if l.0 <= 1e-12 * l.2.max(1e-300) || l.1 <= 1e-12 * l.2.max(1e-300) || dot(n1, r) <= 0.2 * l.0 * l.2 || dot(n2, r) <= 0.2 * l.1 * l.2 {
+                        continue;
+                    }
+                    self.triangles[t as usize] = [u, b, a];
+                    self.triangles[t2] = [b, v, a];
+                    flips += 1;
+                    done = true;
+                    break 'search;
+                }
+            }
+            if !done {
+                break;
+            }
+        }
+        self.index();
+        flips
+    }
+
+    /// Whether splitting the triangle on half-edge `u`→`v` at `points` (a fan from its third
+    /// corner) gives triangles that all face the way it does, none of them degenerate.
+    fn fan_fits(&self, u: u32, v: u32, points: &[u32]) -> bool {
+        let Some(&t) = self.half.get(&(u, v)) else { return false };
+        let tri = self.triangles[t];
+        let Some(x) = tri.iter().copied().find(|&c| c != u && c != v) else { return false };
+        let p = |i: u32| self.positions[i as usize];
+        let n0 = cross(sub(p(v), p(u)), sub(p(x), p(u)));
+        let l0 = norm(n0);
+        if l0 <= 0.0 {
+            return false;
+        }
+        let mut chain = vec![u];
+        chain.extend_from_slice(points);
+        chain.push(v);
+        chain.windows(2).all(|w| {
+            let n = cross(sub(p(w[1]), p(w[0])), sub(p(x), p(w[0])));
+            dot(n, n0) > 1e-3 * norm(n) * l0 && norm(n) > 1e-9 * l0
+        })
     }
 
     /// Fills the gap between chains `a` and `b` (as for [`Stitch::ladder`]) when the polygon they
@@ -361,49 +603,64 @@ impl Stitch {
         };
         let w = cross(nn, u);
         let q: Vec<[f64; 2]> = pos.iter().map(|&p| [dot(p, u), dot(p, w)]).collect();
-        let cross2 = |a: [f64; 2], b: [f64; 2], c: [f64; 2]| (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
-        let scale = q.iter().map(|p| p[0].abs().max(p[1].abs())).fold(0.0, f64::max).max(1e-9);
-        let eps = 1e-12 * scale * scale;
-        let mut idx: Vec<usize> = (0..n).collect();
-        let mut tris = Vec::with_capacity(n - 2);
-        while idx.len() > 3 {
-            let m = idx.len();
-            let mut best: Option<(usize, f64)> = None;
-            for k in 0..m {
-                let (i0, i1, i2) = (idx[(k + m - 1) % m], idx[k], idx[(k + 1) % m]);
-                let (p0, p1, p2) = (q[i0], q[i1], q[i2]);
-                let area = cross2(p0, p1, p2);
-                if area <= eps {
-                    continue;
-                }
-                let blocked = idx.iter().any(|&j| {
-                    if j == i0 || j == i1 || j == i2 || q[j] == p0 || q[j] == p1 || q[j] == p2 {
-                        return false;
-                    }
-                    let pj = q[j];
-                    cross2(p0, p1, pj) >= -eps && cross2(p1, p2, pj) >= -eps && cross2(p2, p0, pj) >= -eps
-                });
-                if blocked {
-                    continue;
-                }
-                // Shape: area over the squared longest edge.
-                let e = |a: [f64; 2], b: [f64; 2]| (a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2);
-                let quality = area / e(p0, p1).max(e(p1, p2)).max(e(p2, p0));
-                if best.is_none_or(|b| quality > b.1) {
-                    best = Some((k, quality));
-                }
-            }
-            let (k, _) = best?;
-            let m = idx.len();
-            tris.push([poly[idx[(k + m - 1) % m]], poly[idx[k]], poly[idx[(k + 1) % m]]]);
-            idx.remove(k);
-        }
-        if cross2(q[idx[0]], q[idx[1]], q[idx[2]]) <= eps {
+        let tris = ear_clip(&poly, &q)?;
+        // In 3D each triangle must face the plane's way: a gap that bends (a strip around a
+        // cylinder) can pass the flatness test and still fold once projected.
+        let p3 = |v: u32| self.positions[v as usize];
+        if tris.iter().any(|t| {
+            let n = cross(sub(p3(t[1]), p3(t[0])), sub(p3(t[2]), p3(t[0])));
+            dot(n, nn) <= 0.5 * norm(n)
+        }) {
             return None;
         }
-        tris.push([poly[idx[0]], poly[idx[1]], poly[idx[2]]]);
         let added = tris.len();
         self.triangles.extend(tris);
+        self.patch.resize(self.triangles.len(), false);
+        Some(added)
+    }
+
+    /// Fills the gap between chains `a` and `b` (as for [`Stitch::ladder`]) by ear clipping in
+    /// the gap's own coordinates: arc length along `b` and distance from it. That unrolls a strip
+    /// along the outline whatever the face next to it is (a plane, a hole's wall), so it works
+    /// where the gap is not flat. `None` when the gap is not simple in those coordinates.
+    fn ribbon(&mut self, a: &[u32], b: &[u32]) -> Option<usize> {
+        if a.first() != b.first() || a.last() != b.last() || a.len() + b.len() < 5 || b.len() < 2 {
+            return None;
+        }
+        let p3 = |s: &Self, v: u32| s.positions[v as usize];
+        let mut sb = vec![0.0];
+        for k in 1..b.len() {
+            sb.push(sb[k - 1] + norm(sub(p3(self, b[k]), p3(self, b[k - 1]))));
+        }
+        let mut poly: Vec<u32> = b.to_vec();
+        poly.extend(a[1..a.len() - 1].iter().rev());
+        let mut q: Vec<[f64; 2]> = sb.iter().map(|&s| [s, 0.0]).collect();
+        for &v in a[1..a.len() - 1].iter().rev() {
+            let p = p3(self, v);
+            let (mut at, mut best) = (0.0, f64::INFINITY);
+            for k in 0..b.len() - 1 {
+                let (t, d) = closest_on_segment(p, p3(self, b[k]), p3(self, b[k + 1]));
+                if d < best {
+                    best = d;
+                    at = sb[k] + t * (sb[k + 1] - sb[k]);
+                }
+            }
+            q.push([at, best]);
+        }
+        let area: f64 = (0..q.len()).map(|i| {
+            let (p, r) = (q[i], q[(i + 1) % q.len()]);
+            p[0] * r[1] - r[0] * p[1]
+        }).sum();
+        if area < 0.0 {
+            q.iter_mut().for_each(|p| p[1] = -p[1]);
+        }
+        let tris = ear_clip(&poly, &q)?;
+        if tris.iter().any(|t| norm(cross(sub(p3(self, t[1]), p3(self, t[0])), sub(p3(self, t[2]), p3(self, t[0])))) <= 0.0) {
+            return None;
+        }
+        let added = tris.len();
+        self.triangles.extend(tris);
+        self.patch.resize(self.triangles.len(), false);
         Some(added)
     }
 
@@ -484,12 +741,13 @@ impl Stitch {
         }
         let added = new.len();
         self.triangles.extend(new);
+        self.patch.resize(self.triangles.len(), false);
         Ok(added)
     }
 }
 
 /// One graft of the kept triangles `keep` (all of one or more patches).
-fn graft(mesh: &Mesh, original: &Original, keep: &[bool], h: f64, check: bool, ears: bool) -> Result<(Mesh, Stats), String> {
+fn graft(mesh: &Mesh, original: &Original, keep: &[bool], h: f64, check: bool, mode: Fill, band: f64) -> Result<(Mesh, Stats), String> {
     let mut stats = Stats::default();
     let opos = &original.positions;
     // The outline of the kept triangles, for "is this point on the outline".
@@ -518,7 +776,7 @@ fn graft(mesh: &Mesh, original: &Original, keep: &[bool], h: f64, check: bool, e
         // rounding). Near it: only on its outer side (not the far side of a thin wall).
         keep[t]
             && d <= near
-            && (d <= 1e-6 * h || dot(n, original.normals[t]) > 0.3)
+            && (d <= 0.05 * h || dot(n, original.normals[t]) > 0.3)
             && outline_shape.distance_to_local_point(v3(q), false) > off_outline
     };
     let normals = vertex_normals(mesh);
@@ -567,38 +825,177 @@ fn graft(mesh: &Mesh, original: &Original, keep: &[bool], h: f64, check: bool, e
             break;
         }
     }
-    let holes = boundary_loops(&rest)?;
+    // A vertex of the result on the outline (within the weld distance) must end up on the cut, to
+    // be welded: one inside the remaining surface lies between the outline's chords and the true
+    // edge, and its triangles would overlap what fills the gap. Cut its triangles too.
+    let weld = 0.1 * h;
+    for _ in 0..8 {
+        let mut on_cut = vec![false; mesh.positions.len()];
+        {
+            let mut half: std::collections::HashSet<(u32, u32)> = std::collections::HashSet::with_capacity(rest.len() * 3);
+            for t in &rest {
+                for e in 0..3 {
+                    half.insert((t[e], t[(e + 1) % 3]));
+                }
+            }
+            for &(a, b) in &half {
+                if !half.contains(&(b, a)) {
+                    on_cut[a as usize] = true;
+                    on_cut[b as usize] = true;
+                }
+            }
+        }
+        let mut seen = vec![false; mesh.positions.len()];
+        let mut inner: Vec<u32> = Vec::new();
+        for t in &rest {
+            for &v in t {
+                let v = v as usize;
+                if !seen[v] && !on_cut[v] {
+                    seen[v] = true;
+                    if outline_shape.distance_to_local_point(v3(mesh.positions[v]), false) <= weld {
+                        inner.push(v as u32);
+                    }
+                }
+            }
+        }
+        if inner.is_empty() {
+            break;
+        }
+        let inner: std::collections::HashSet<u32> = inner.into_iter().collect();
+        let before = rest.len();
+        rest.retain(|t| !t.iter().any(|v| inner.contains(v)));
+        stats.removed += before - rest.len();
+    }
+    // A wider cut, when asked for: every triangle with a corner within `band` of the outline, so
+    // that the gap is filled afresh rather than stitched to a ragged edge.
+    if band > 0.0 {
+        let near: Vec<bool> = mesh.positions.iter().map(|&p| outline_shape.distance_to_local_point(v3(p), false) <= band).collect();
+        let before = rest.len();
+        rest.retain(|t| !t.iter().any(|&v| near[v as usize]));
+        stats.removed += before - rest.len();
+    }
+    // Islands: pieces of the result left inside the cut, all of them on or next to the kept faces
+    // (a ring around a hole the cut went round). They would leave a loop no outline matches.
+    {
+        let tmp = Mesh { positions: mesh.positions.clone(), triangles: rest.clone() };
+        let (comp, count) = tmp.components();
+        if count > 1 {
+            let mut size = vec![0usize; count];
+            for &c in &comp {
+                size[c as usize] += 1;
+            }
+            let largest = (0..count).max_by_key(|&c| size[c]).unwrap_or(0);
+            let mut near_kept = vec![true; count];
+            for (t, tri) in rest.iter().enumerate() {
+                let c = comp[t] as usize;
+                if c == largest || !near_kept[c] {
+                    continue;
+                }
+                for &v in tri {
+                    let p = mesh.positions[v as usize];
+                    let (proj, (k, _)) = original.shape.project_local_point_and_get_location(v3(p), false);
+                    if !keep[k as usize] || norm(sub(p, [proj.point.x, proj.point.y, proj.point.z])) > h {
+                        near_kept[c] = false;
+                        break;
+                    }
+                }
+            }
+            let before = rest.len();
+            let mut k = 0;
+            rest.retain(|_| {
+                let c = comp[k] as usize;
+                k += 1;
+                c == largest || !near_kept[c]
+            });
+            stats.removed += before - rest.len();
+        }
+    }
+    // Where two cuts touch at a vertex, cut its triangles too, until the cut's loops are simple.
+    let holes = {
+        let mut tries = 0;
+        loop {
+            match pinched_vertex(&rest) {
+                None => break boundary_loops(&rest)?,
+                Some(v) if tries < 64 => {
+                    let before = rest.len();
+                    rest.retain(|t| !t.contains(&v));
+                    stats.removed += before - rest.len();
+                    tries += 1;
+                }
+                Some(_) => return Err("the cut touches itself at a vertex".into()),
+            }
+        }
+    };
 
     // 2. Insert: the original's vertices go after the result's.
     let base = mesh.positions.len() as u32;
-    let mut s = Stitch { positions: mesh.positions.clone(), triangles: rest, half: HashMap::new() };
+    let mut s = Stitch { positions: mesh.positions.clone(), patch: vec![false; rest.len()], triangles: rest, half: HashMap::new() };
     s.positions.extend_from_slice(opos);
     for t in &kept_tris {
         s.triangles.push(t.map(|v| v + base));
+        s.patch.push(true);
     }
     stats.inserted = kept_tris.len();
     let mut outlines: Vec<Outline> = outline_loops.iter().map(|lp| Outline::new(lp.iter().map(|&v| v + base).collect(), &s.positions)).collect();
 
-    // 3. Match each hole to the nearest outline loop, one to one.
-    if holes.len() != outlines.len() {
+    // 3. Match each hole to the nearest outline loop, one to one: the nearest pairs first. A
+    // small hole left over (a triangle or two cut apart from the rest) is closed where it is.
+    let mut pairs: Vec<(f64, usize, usize)> = Vec::new();
+    for (k, hole) in holes.iter().enumerate() {
+        for (o, out) in outlines.iter().enumerate() {
+            let mean = hole.iter().map(|&v| out.nearest(s.positions[v as usize], &s.positions).2).sum::<f64>() / hole.len() as f64;
+            pairs.push((mean, k, o));
+        }
+    }
+    // Small holes last: a stray one must not take a loop from the cut that runs along it.
+    pairs.sort_by(|a, b| (holes[a.1].len() <= 12).cmp(&(holes[b.1].len() <= 12)).then(a.0.total_cmp(&b.0)));
+    let mut owner = vec![usize::MAX; outlines.len()];
+    let mut matched = vec![false; holes.len()];
+    for &(mean, k, o) in &pairs {
+        if owner[o] == usize::MAX && !matched[k] {
+            if mean > 10.0 * h {
+                return Err(format!("a cut is {:.2} samples from the outline", mean / h));
+            }
+            owner[o] = k;
+            matched[k] = true;
+        }
+    }
+    if owner.contains(&usize::MAX) {
         return Err(format!("{} holes cut for {} outline loops", holes.len(), outlines.len()));
     }
-    let mut owner = vec![usize::MAX; outlines.len()];
     for (k, hole) in holes.iter().enumerate() {
-        let (best, mean) = (0..outlines.len())
-            .map(|o| (o, hole.iter().map(|&v| outlines[o].nearest(s.positions[v as usize], &s.positions).2).sum::<f64>() / hole.len() as f64))
-            .min_by(|a, b| a.1.total_cmp(&b.1))
-            .unwrap();
-        if mean > 1.5 * h {
-            return Err(format!("a cut is {:.2} samples from the outline", mean / h));
+        if matched[k] {
+            continue;
         }
-        if owner[best] != usize::MAX {
-            return Err("two cuts meet one outline loop".into());
+        if hole.len() > 12 {
+            return Err(format!("{} holes cut for {} outline loops", holes.len(), outlines.len()));
         }
-        owner[best] = k;
+        // Fill it: against the hole's direction, ear-clipped in its best-fit plane.
+        let poly: Vec<u32> = hole.iter().rev().copied().collect();
+        let pos: Vec<[f64; 3]> = poly.iter().map(|&v| s.positions[v as usize]).collect();
+        let n = pos.len();
+        let mut nn = [0.0; 3];
+        for i in 0..n {
+            let (p, q) = (pos[i], pos[(i + 1) % n]);
+            nn[0] += (p[1] - q[1]) * (p[2] + q[2]);
+            nn[1] += (p[2] - q[2]) * (p[0] + q[0]);
+            nn[2] += (p[0] - q[0]) * (p[1] + q[1]);
+        }
+        let mut axis = least_spread(&pos).ok_or("a small cut does not close")?;
+        if dot(axis, nn) < 0.0 {
+            axis = axis.map(|c| -c);
+        }
+        let t = if axis[0].abs() < 0.9 { [1.0, 0.0, 0.0] } else { [0.0, 1.0, 0.0] };
+        let u = cross(axis, t);
+        let u = u.map(|c| c / norm(u));
+        let w = cross(axis, u);
+        let q: Vec<[f64; 2]> = pos.iter().map(|&p| [dot(p, u), dot(p, w)]).collect();
+        let tris = ear_clip(&poly, &q).ok_or("a small cut does not close")?;
+        stats.bridged += tris.len();
+        s.triangles.extend(tris);
+        s.patch.resize(s.triangles.len(), false);
     }
 
-    let weld = 0.02 * h;
     let mut remap: Vec<u32> = (0..s.positions.len() as u32).collect();
     for (o, &k) in owner.iter().enumerate() {
         let hole = &holes[k];
@@ -764,17 +1161,17 @@ fn graft(mesh: &Mesh, original: &Original, keep: &[bool], h: f64, check: bool, e
             if a.len() == 2 && b.len() == 2 {
                 continue; // already twins
             }
-            if a.len() == 2 {
-                // The result's edge runs along the outline: split it at the outline's vertices if
-                // they lie on it, else fill the sliver between.
-                let (pa, pb) = (s.positions[a[0] as usize], s.positions[a[1] as usize]);
-                let inner = &b[1..b.len() - 1];
-                if inner.iter().all(|&v| closest_on_segment(s.positions[v as usize], pa, pb).1 <= 0.05 * h) {
-                    s.split(a[0], a[1], inner)?;
-                    continue;
-                }
+            if a.len() == 2 && s.fan_fits(a[0], a[1], &b[1..b.len() - 1]) {
+                // The result's edge runs along the outline, whose vertices between lie on it or
+                // inside its triangle: split the triangle at them.
+                s.split(a[0], a[1], &b[1..b.len() - 1])?;
+                continue;
             }
-            let filled = if ears { s.ears(&a, &b, h) } else { None };
+            let filled = match mode {
+                Fill::Ears => s.ears(&a, &b, h).or_else(|| s.ribbon(&a, &b)),
+                Fill::Ribbon => s.ribbon(&a, &b),
+                Fill::Ladder => None,
+            };
             stats.bridged += match filled {
                 Some(added) => added,
                 None => s.ladder(&a, &b, 0.02 * h)?,
@@ -783,6 +1180,7 @@ fn graft(mesh: &Mesh, original: &Original, keep: &[bool], h: f64, check: bool, e
         }
     }
 
+    s.mend(1e-6 * h);
     let mut out = Mesh { positions: s.positions, triangles: s.triangles };
     out.compact();
     let r = out.validate(check);

@@ -482,10 +482,14 @@ fn optimize() -> Result<Value, PluginError> {
     let outcome = topopt_study::solve(&job, &mut hooks).map_err(|e| {
         if e == "cancelled" { PluginError::Cancelled } else { invalid("optimize", e) }
     })?;
-    write_mesh(&path, &outcome.mesh)?;
     save_density(&outcome.density)?;
     let mut result = outcome.result;
-    result.stl = path;
+    if outcome.mesh.triangles.is_empty() {
+        result.stl = String::new();
+    } else {
+        write_mesh(&path, &outcome.mesh)?;
+        result.stl = path;
+    }
     result.inserted = false;
     if surf.is_none() && study.pins_faces() {
         result.warnings.push("the body's surface was not available: faces are not kept exactly".into());
@@ -549,15 +553,27 @@ fn create_body() -> Result<Value, PluginError> {
     let inserted = run("file.insert_mesh", json!({"path": format!("grant:results/{}", result.stl), "units": "mm", "name": name}))?;
     let body = inserted["bodies"][0].as_str().unwrap_or_default().to_owned();
     let mut converted = Value::Null;
+    let mut convert_error = None;
     if study.mesh.convert_solid && !body.is_empty() {
-        converted = run("mesh.convert", json!({"body": body, "name": format!("{name} solid")}))?;
+        // The mesh body stays when the CAD kernel cannot rebuild it as a solid: say why, and how
+        // to try again, rather than losing the insert too.
+        match run("mesh.convert", json!({"body": body, "name": format!("{name} solid")})) {
+            Ok(v) => converted = v,
+            Err(e) => convert_error = Some(format!("{e:?}")),
+        }
     }
     let measured = run("inspect.measure", json!({"bodies": [body]}))?;
     if let Some(r) = study.result.as_mut() {
         r.inserted = true;
+        r.warnings.retain(|w| !w.starts_with("the body was inserted as a mesh"));
+        if let Some(e) = &convert_error {
+            r.warnings.push(format!(
+                "the body was inserted as a mesh: SolidCraft could not make it a solid ({e}); Re-mesh with other settings (smoothing, triangles) and Create body again, or use the mesh body"
+            ));
+        }
     }
     save(&study)?;
-    Ok(json!({"body": body, "converted": !converted.is_null(), "measure": measured["bodies"][0]}))
+    Ok(json!({"body": body, "converted": !converted.is_null(), "convert_error": convert_error, "measure": measured["bodies"][0]}))
 }
 
 // ---------------------------------------------------------------------------------------------

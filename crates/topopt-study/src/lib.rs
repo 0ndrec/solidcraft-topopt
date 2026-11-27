@@ -16,7 +16,7 @@ pub mod study;
 pub mod trim;
 pub mod voxel;
 
-pub use study::{Condition, FaceRef, MATERIALS, Material, MeshSettings, RunResult, SMOOTHERS, Settings, Study};
+pub use study::{CaseResult, Condition, FaceRef, MATERIALS, Material, MeshSettings, RunResult, SMOOTHERS, Settings, Study};
 pub use topopt_mesh::Mesh;
 pub use spec::{MeshCaster, Spec, prepare_spec};
 pub use voxel::{Caster, Hit, label_faces};
@@ -265,9 +265,51 @@ pub fn solve(job: &Job, hooks: &mut dyn Hooks) -> Result<Outcome, String> {
         }
     }
 
+    // Check the result as it will be meshed: solid where the density reaches the iso value.
+    hooks.progress(0.9, "checking deflection and stress");
+    let solid = attached_material(problem, &density, study.mesh.iso);
+    let mut numbers: Vec<u32> = study.conditions.iter().filter_map(|c| if let Condition::Load { case, .. } = c { Some(*case) } else { None }).collect();
+    numbers.sort_unstable();
+    numbers.dedup();
+    // A check that cannot be made does not throw the optimization away either.
+    let checked = match opt.check(&solid) {
+        Ok(c) => c,
+        Err(e) => {
+            warnings.push(format!("the deflection and stress check could not be made ({e})"));
+            Vec::new()
+        }
+    };
+    let cases: Vec<CaseResult> = checked
+        .into_iter()
+        .enumerate()
+        .map(|(k, c)| {
+            let material: Vec<f64> = c.von_mises.iter().zip(&solid).filter(|(_, s)| **s > 0.5).map(|(v, _)| *v).collect();
+            CaseResult {
+                case: numbers.get(k).copied().unwrap_or(k as u32 + 1),
+                compliance: c.compliance,
+                max_displacement_mm: c.max_displacement,
+                stress_p99_mpa: topopt_core::stress::quantile(&material, 0.99),
+                stress_max_mpa: material.iter().copied().fold(0.0, f64::max),
+            }
+        })
+        .collect();
+    if hooks.cancelled() {
+        return Err("cancelled".into());
+    }
+
     hooks.progress(0.9, "making the mesh");
     let surface = job.surface();
-    let (mesh, full_report) = make_mesh(study, &density, surface)?;
+    // A mesh that cannot be made does not throw the optimization away: the densities are
+    // returned with an empty mesh, and Re-mesh can try other mesh settings.
+    let (mesh, full_report, meshed) = match make_mesh(study, &density, surface) {
+        Ok((m, r)) => (m, r, true),
+        Err(e) => {
+            warnings.push(format!(
+                "the mesh could not be made ({e}); the optimized densities are kept: change the Mesh settings (fewer smoothing passes, another smoother) and press Re-mesh"
+            ));
+            (Mesh::default(), topopt_mesh::Report::default(), false)
+        }
+    };
     warnings.extend(mesh_warnings(study, &full_report, surface.is_some()));
     let mesh_report = full_report.mesh;
     let outcome_name = if stopped_by_time {
@@ -293,11 +335,15 @@ pub fn solve(job: &Job, hooks: &mut dyn Hooks) -> Result<Outcome, String> {
         grid: [grid.nx, grid.ny, grid.nz],
         h: grid.h,
         seconds: hooks.elapsed(),
-        stl: job.mesh_path.clone(),
+        stl: if meshed { job.mesh_path.clone() } else { String::new() },
         inserted: false,
         warnings,
         trimmed,
         solver: solver_name,
+        max_displacement_mm: cases.iter().map(|c| c.max_displacement_mm).fold(0.0, f64::max),
+        stress_p99_mpa: cases.iter().map(|c| c.stress_p99_mpa).fold(0.0, f64::max),
+        stress_max_mpa: cases.iter().map(|c| c.stress_max_mpa).fold(0.0, f64::max),
+        cases,
     };
     hooks.progress(1.0, "done");
     Ok(Outcome { mesh, density, result })
@@ -314,6 +360,65 @@ pub fn run(
 ) -> Result<Outcome, String> {
     let job = prepare(study, body, design, keep_out, surface, hooks)?;
     solve(&job, hooks)
+}
+
+/// The result as it will be meshed, for checking: 1 where the density reaches `iso` (and on the
+/// pads), 0 elsewhere, and only the material joined (face to face) to an element that is a pad
+/// or holds a support or a load. Pieces left floating at the threshold are dropped, as the mesher
+/// drops them: they carry nothing, and they would make the stiffness matrix singular.
+pub fn attached_material(problem: &Problem, density: &Density, iso: f64) -> Vec<f64> {
+    let g = problem.grid;
+    let solid: Vec<bool> = (0..g.nel()).map(|e| density.inside[e] && (density.pads[e] || density.values[e] as f64 >= iso)).collect();
+    let mut held = vec![false; g.nnodes()];
+    for f in &problem.supports {
+        held[f.node] = true;
+    }
+    for c in &problem.load_cases {
+        for f in &c.forces {
+            held[f.node] = true;
+        }
+    }
+    let mut keep = vec![false; g.nel()];
+    let mut stack: Vec<usize> = Vec::new();
+    for e in 0..g.nel() {
+        if !solid[e] {
+            continue;
+        }
+        let [i, j, k] = g.elem_ijk(e);
+        if density.pads[e] || g.elem_nodes(i, j, k).iter().any(|&n| held[n]) {
+            keep[e] = true;
+            stack.push(e);
+        }
+    }
+    while let Some(e) = stack.pop() {
+        let [i, j, k] = g.elem_ijk(e);
+        let mut visit = |i: usize, j: usize, k: usize| {
+            let n = g.elem(i, j, k);
+            if solid[n] && !keep[n] {
+                keep[n] = true;
+                stack.push(n);
+            }
+        };
+        if i > 0 {
+            visit(i - 1, j, k);
+        }
+        if i + 1 < g.nx {
+            visit(i + 1, j, k);
+        }
+        if j > 0 {
+            visit(i, j - 1, k);
+        }
+        if j + 1 < g.ny {
+            visit(i, j + 1, k);
+        }
+        if k > 0 {
+            visit(i, j, k - 1);
+        }
+        if k + 1 < g.nz {
+            visit(i, j, k + 1);
+        }
+    }
+    keep.iter().map(|&k| if k { 1.0 } else { 0.0 }).collect()
 }
 
 /// Volume of the design body as voxelized (mm³).
@@ -348,9 +453,6 @@ pub fn make_mesh(study: &Study, density: &Density, surface: Surface) -> Result<(
     }
     let field = Field::from_cells(fine, g.h / k as f64, g.origin, &cells, 1);
     let anchors = field.cell_mask(fine, 1, &pads);
-    // Under kept surfaces the mesh is not simplified: merging triangles there tilts the face.
-    let frozen = (density.kept.len() == values.len() && density.kept.iter().any(|&f| f))
-        .then(|| field.cell_mask(fine, 1, &topopt_mesh::upsample_mask(dims, &density.kept, k)));
     let projector = match (study.pins_faces(), surface) {
         (true, Some(s)) if !s.triangles.is_empty() => Some(Projector::new(s.positions, s.triangles)?),
         _ => None,
@@ -371,7 +473,7 @@ pub fn make_mesh(study: &Study, density: &Density, surface: Surface) -> Result<(
         ..Default::default()
     };
     let h = field.h;
-    let (mut mesh, mut report) = topopt_mesh::extract_with(field, Some(&anchors), frozen.as_deref(), projector.as_ref(), &opts)?;
+    let (mut mesh, mut report) = topopt_mesh::extract_with(field, Some(&anchors), None, projector.as_ref(), &opts)?;
     // Kept faces exactly as the CAD model has them: its own triangles there, stitched in.
     let kept_faces: Vec<i64> = study
         .conditions

@@ -24,8 +24,9 @@ pub mod opt;
 pub mod par;
 pub mod pcg;
 pub mod problem;
+pub mod stress;
 
 pub use backend::{CpuSolver, LinearSolver, SolverFactory};
 pub use grid::Grid;
-pub use opt::{Iteration, Optimizer, Outcome, Settings};
+pub use opt::{CaseCheck, Iteration, Optimizer, Outcome, Settings};
 pub use problem::{ElementKind, LoadCase, Material, NodeFix, NodeForce, Problem};

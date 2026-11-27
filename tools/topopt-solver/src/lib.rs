@@ -330,7 +330,7 @@ pub fn run(input: &Input, opts: &RunOptions, on_event: &mut dyn FnMut(&Event)) -
             files.push(path.to_path_buf());
             Ok(())
         };
-        if let Some(p) = &opts.mesh_out {
+        if let Some(p) = opts.mesh_out.as_ref().filter(|_| !out.mesh.triangles.is_empty()) {
             write(p, mesh_bytes(&out.mesh, p, &format!("TopOpt {name}")))?;
         }
         if let Some(p) = &opts.density_out {

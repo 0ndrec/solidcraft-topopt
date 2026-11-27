@@ -142,7 +142,7 @@ run_tools = node({"toolbar": [btn("Optimize", "optimize"), btn("Create body", "c
 run_note = node({"text": "Optimize runs in the background (operations panel, bottom right). With TopOpt Solver running it uses every CPU core."})
 status = node(table("/status", [col("key", "Study"), col("value", "Value")]))
 result = node(table("/result", [col("key", "Result"), col("value", "Value")]))
-run = node({"group": [run_tools, run_note, status, result]})
+run = node({"group": [run_tools, result, run_note, status]})
 
 basic = node({"form": {"bind": "/settings", "fields": [
     field("volume_percent", "Keep, % of the design body", "number"),
@@ -189,7 +189,7 @@ nodes[root] = {"widget": {"group": [next_row, tabs]}}
 manifest = {
     "id": "topopt",
     "name": "TopOpt",
-    "version": "0.10.0",
+    "version": "0.11.0",
     "description": "Topology optimization: pick a design body, supports and loads; get a lightweight, stiff part as a mesh or solid.",
     "capabilities": ["commands@0.2", "ui@0.1", "storage@0.1", "forms@0.1"],
     "runtime": {

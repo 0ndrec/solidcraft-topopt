@@ -286,6 +286,29 @@ pub struct RunResult {
     pub trimmed: f64,
     /// What solved the linear systems ("CPU, 6 threads", or a GPU's name).
     pub solver: String,
+    /// The result checked against its loads: the densities made solid (at or above the iso
+    /// value) or empty, analysed once more. Worst over the load cases.
+    pub max_displacement_mm: f64,
+    /// Von Mises stress in that material, MPa: 99 % of it is below `stress_p99_mpa`;
+    /// `stress_max_mpa` is the single highest element (the voxels exaggerate it at supports and
+    /// corners).
+    pub stress_p99_mpa: f64,
+    pub stress_max_mpa: f64,
+    /// The same per load case, in case-number order.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub cases: Vec<CaseResult>,
+}
+
+/// One load case of [`RunResult::cases`].
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CaseResult {
+    pub case: u32,
+    /// F·u, N·mm.
+    pub compliance: f64,
+    pub max_displacement_mm: f64,
+    pub stress_p99_mpa: f64,
+    pub stress_max_mpa: f64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

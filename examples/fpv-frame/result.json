@@ -1,0 +1,113 @@
+{
+ "body": {
+  "body": "Frame (2)",
+  "converted": true,
+  "measure": {
+   "area_mm2": 17295.442595587712,
+   "bbox": {
+    "max": [
+     53.420021057128906,
+     53.4244384765625,
+     6.5224809646606445
+    ],
+    "min": [
+     -53.42445373535156,
+     -53.424835205078125,
+     -0.0029734617564827204
+    ]
+   },
+   "center_of_mass": [
+    -0.016195240239072265,
+    -0.02100521410396873,
+    3.3227687479925128
+   ],
+   "closed": true,
+   "density_g_cm3": 1.29,
+   "edges": 35810,
+   "face_types": {
+    "plane": 22245
+   },
+   "faces": 22245,
+   "kernel": {
+    "edges": 37459,
+    "faces": 23534,
+    "shells": 1,
+    "vertices": 13667
+   },
+   "mass_g": 12.010349172746606,
+   "material": "Default",
+   "measured_by": "smlib",
+   "name": "Frame (2)",
+   "notes": [],
+   "vertices": 13307,
+   "volume_mm3": 9310.3481959276
+  }
+ },
+ "result": {
+  "cases": [
+   {
+    "case": 1,
+    "compliance": 11.502767499476851,
+    "max_displacement_mm": 1.2727097594480543,
+    "stress_max_mpa": 5.035020690202613,
+    "stress_p99_mpa": 3.1826009109527083
+   },
+   {
+    "case": 2,
+    "compliance": 2.5377451056505738,
+    "max_displacement_mm": 0.37101854201506607,
+    "stress_max_mpa": 4.303560224062546,
+    "stress_p99_mpa": 2.446490180966266
+   },
+   {
+    "case": 3,
+    "compliance": 2.5430420257319466,
+    "max_displacement_mm": 0.3717192427437493,
+    "stress_max_mpa": 4.3181003674386815,
+    "stress_p99_mpa": 2.468478177994105
+   },
+   {
+    "case": 4,
+    "compliance": 2.546879175808322,
+    "max_displacement_mm": 0.37214977621607664,
+    "stress_max_mpa": 4.473335890149914,
+    "stress_p99_mpa": 2.4559181612104983
+   },
+   {
+    "case": 5,
+    "compliance": 2.543979166555789,
+    "max_displacement_mm": 0.3721304296242174,
+    "stress_max_mpa": 4.473776971084929,
+    "stress_p99_mpa": 2.4514980604329204
+   }
+  ],
+  "compliance": 22.14710930673524,
+  "elements": 52832,
+  "genus": 152,
+  "grid": [
+   132,
+   132,
+   8
+  ],
+  "h": 0.8240000000000001,
+  "inserted": true,
+  "iterations": 176,
+  "mass_g": 11.824142232754422,
+  "max_displacement_mm": 1.2727097594480543,
+  "mesh_volume_mm3": 9310.348214767262,
+  "outcome": "converged",
+  "seconds": 1089.7783535,
+  "solver": "Quadro P620 (CUDA, sm_61)",
+  "stl": "topopt/Frame.ply",
+  "stress_max_mpa": 5.035020690202613,
+  "stress_p99_mpa": 3.1826009109527083,
+  "triangles": 29836,
+  "trimmed": 0.0,
+  "volume_fraction": 0.3095071880096531,
+  "warnings": [
+   "element size 0.8 mm needs 221952 elements; raised to stay under 200000",
+   "1 of 4 kept surfaces could not take the CAD model's own triangles and are approximated (patch 1: 7 holes cut for 6 outline loops)",
+   "solved by TopOpt Solver on Quadro P620 (CUDA, sm_61)"
+  ]
+ }
+}

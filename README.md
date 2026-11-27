@@ -25,16 +25,27 @@ Give it a design domain, where the part is held, where it is loaded and how much
   <br><i>Before and after: struts meshed from the voxel densities (left) and from the smooth filtered field, sampled ×2 (right).</i>
 </p>
 
-![The TopOpt panel and ribbon in SolidCraft](docs/images/solidcraft-panel.png)
+![The TopOpt panel and ribbon in SolidCraft, with the FPV frame study](docs/images/solidcraft-panel.png)
 
 ## Highlights
 
 - **Fast solver:** matrix-free Hex8 finite elements, geometric multigrid-preconditioned CG with element-wise Galerkin coarse levels, density filter, Heaviside projection with β-continuation, optimality criteria. Multi-threaded natively (rayon, lock-free coloured matrix-vector products); single-threaded in the plugin sandbox.
 - **Correct, smooth meshes:** marching tetrahedra on the optimizer's filtered field sampled ×2 (round members, not voxels), island and cavity clean-up, bilateral, HC or Taubin smoothing with volume preservation, the original CAD faces, sharp edges and corners kept exact, QEM decimation, and a validator for every guarantee (closed, 2-manifold, oriented, no self-intersections, folds or f32 vertex collisions).
 - **NVIDIA GPUs:** TopOpt CUDA Solver runs the same multigrid-CG on the GPU in mixed precision (single-precision V-cycle, double-precision refinement), with the CPU's answer: linear solves 3–4× faster than 6 CPU threads even on an entry-level Quadro P620. No CUDA toolkit needed, only the driver; without a GPU it falls back to the CPU.
+- **Checked results:** every run analyses its result once more under each load case and reports the largest deflection (mm) and the von Mises stress (MPa) to compare with the material's strength; it agrees with beam theory within 1.5 %.
 - **Optional trimming** of thin dead weight, piece by piece, within a stiffness budget you set.
 - **Verified:** the core agrees with an independent Python implementation to 1.45·10⁻⁸; meshes pass trimesh's watertightness checks and SolidCraft's `mesh.convert`.
 - **Works around the sandbox:** the plugin hands heavy runs to TopOpt Solver over a small file protocol and gets every CPU core (3–5× faster on a 6-core machine), and solves by itself when the solver is not running.
+
+## Example: a lighter FPV frame
+
+A 3-inch FPV drone frame printed in PETG, from a solid blank: held at the flight stack, pushed by full-throttle thrust on the motor seats (4 × 4.12 N) and by side hits on each arm (10 N). TopOpt CUDA Solver kept 30 % of the material in 18 minutes on an entry-level GPU. The frame went from **38.2 g to 11.8 g**; at full throttle its motors move 1.27 mm and the stress stays under 5 MPa, a safety factor of 4 against PETG printed across layers. The motor seats, kept surfaces, are the CAD model's own faces.
+
+<p align="center">
+  <img src="docs/images/fpv-before-after.png" alt="An FPV frame blank and the optimized frame" width="98%">
+</p>
+
+The whole study, with where the loads come from and how the result was checked: [examples/fpv-frame](examples/fpv-frame/README.md).
 
 ## Quick start
 
@@ -84,14 +95,14 @@ plugins/topopt/         the plugin package: generated manifest, icons
 tools/topopt-solver/    TopOpt Solver: library + CLI
 tools/topopt-cuda-solver/ TopOpt CUDA Solver: the same CLI with the GPU
 tools/reference/        Python cross-checks (independent optimizer, trimesh mesh check)
-examples/               example specs
+examples/               the FPV frame study (SolidCraft) and example specs (solver)
 scripts/                builds, generators, headless SolidCraft tests, mesh renderer
 wit/                    SolidCraft's plugin WIT (craft:plugin@0.2.0)
 xtask/                  componentize the plugin without wasm-tools
 ```
 
 <p align="center">
-  <img src="docs/images/bracket.png" alt="A bracket optimized in SolidCraft" width="45%">
+  <img src="docs/images/fpv-result.png" alt="A 3-inch FPV frame optimized in SolidCraft" width="60%">
 </p>
 
 ## License

@@ -150,11 +150,12 @@ fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
 /// Puts free vertices that lie outside the original body, within `band` of it, back onto its
 /// surface; returns how many. Outside means through a face: the offset from the nearest surface
 /// point runs along that face's outward normal (near an edge or corner the direction is ambiguous,
-/// and the vertex is left alone).
-fn pull_back_inside(mesh: &mut Mesh, pins: &[Pin], s: &Projector, band: f64) -> usize {
+/// and the vertex is left alone). Vertices flagged in `stay` are left alone too: they were in a
+/// crossing or fold that moving them back had made.
+fn pull_back_inside(mesh: &mut Mesh, pins: &[Pin], stay: &[bool], s: &Projector, band: f64) -> usize {
     let mut moved = 0;
     for (v, p) in mesh.positions.iter_mut().enumerate() {
-        if pins[v] != Pin::Free {
+        if pins[v] != Pin::Free || stay[v] {
             continue;
         }
         let (q, d, n) = s.project_with_normal(*p);
@@ -305,6 +306,8 @@ fn extract_once(
         Some(s) => classify(&contour, &normals, s, h, opts),
         None => (vec![Pin::Free; contour.positions.len()], Vec::new()),
     };
+    // Free vertices that a crossing showed must not be pulled back onto the surface.
+    let mut stay = vec![false; contour.positions.len()];
 
     // Smooth. If the result crosses itself or has degenerate triangles, free the vertices of the
     // offending triangles and retry; after a few rounds, halve the iterations instead.
@@ -350,7 +353,7 @@ fn extract_once(
         // pushed out through a face (often the row next to a sharp edge, left free so that the
         // edge does not fold) goes back onto that face.
         if let Some(s) = surface {
-            report.pulled_back = pull_back_inside(&mut mesh, &pins, s, opts.pin_band * h);
+            report.pulled_back = pull_back_inside(&mut mesh, &pins, &stay, s, opts.pin_band * h);
         }
         // Make the creases mesh edges: the contour's triangles often straddle them diagonally.
         report.crease_flips = 0;
@@ -373,19 +376,26 @@ fn extract_once(
         let mut freed = 0;
         for &t in &bad {
             for &v in &mesh.triangles[t as usize] {
-                // Free the vertex, so the fold has room to relax.
-                if pins[v as usize] != Pin::Free {
-                    pins[v as usize] = Pin::Free;
+                // Free the vertex, so the fold has room to relax; a free one is no longer pulled
+                // back onto the surface (that is what made the crossing, then).
+                let v = v as usize;
+                if pins[v] != Pin::Free {
+                    pins[v] = Pin::Free;
+                    freed += 1;
+                } else if !stay[v] {
+                    stay[v] = true;
                     freed += 1;
                 }
             }
         }
         if freed == 0 || rounds > 6 {
-            if iterations == 0 && pins.iter().all(|&p| p == Pin::Free) {
+            if iterations == 0 && pins.iter().all(|&p| p == Pin::Free) && stay.iter().all(|&s| s) {
                 return Err("smoothing could not avoid self-intersections".into());
             }
             if iterations == 0 {
+                // The contour as it is: nothing pinned, nothing moved.
                 pins.iter_mut().for_each(|p| *p = Pin::Free);
+                stay.iter_mut().for_each(|s| *s = true);
             }
             iterations /= 2;
             rounds = 0;
@@ -419,8 +429,9 @@ fn extract_once(
         }
     }
 
-    // Decimate. A result that crosses itself is decimated again from the start with the crossing
-    // triangles' vertices locked; if that does not settle it, the budget grows.
+    // Decimate. A result that crosses itself, folds or degenerates is decimated again from the
+    // start with the offending triangles' vertices locked; if that does not settle it, the budget
+    // grows.
     if let Some(target) = opts.target_triangles {
         if mesh.triangles.len() > target {
             report.decimated_from = mesh.triangles.len();
@@ -437,13 +448,20 @@ fn extract_once(
                         mesh = m;
                         break 'budgets;
                     }
-                    let crossings = if opts.check_self_intersections { intersect::find_self_intersections(&m) } else { Vec::new() };
-                    if crossings.is_empty() {
+                    // What went wrong: crossings, and folds (two triangles folded flat).
+                    let mut offenders: Vec<u32> = if opts.check_self_intersections {
+                        intersect::find_self_intersections(&m).into_iter().flat_map(|(a, b)| [a, b]).collect()
+                    } else {
+                        Vec::new()
+                    };
+                    offenders.extend(mesh::folded_triangles(&m));
+                    offenders.extend(mesh::degenerate_triangles(&m));
+                    if offenders.is_empty() {
                         break;
                     }
-                    // Lock the crossing triangles' corners and their neighbours in the mesh before
+                    // Lock their corners and those corners' neighbours in the mesh before
                     // decimation (the same vertex ids).
-                    let mut lock: Vec<u32> = crossings.iter().flat_map(|&(a, b)| [a, b]).flat_map(|t| m.triangles[t as usize]).collect();
+                    let mut lock: Vec<u32> = offenders.iter().flat_map(|&t| m.triangles[t as usize]).collect();
                     lock.sort_unstable();
                     lock.dedup();
                     let is_locked: std::collections::HashSet<u32> = lock.iter().copied().collect();
@@ -462,7 +480,7 @@ fn extract_once(
     // Decimation places merged vertices where they fit best, which can again be a hair outside.
     if let Some(s) = surface {
         let mut m = mesh.clone();
-        let moved = pull_back_inside(&mut m, &pins, s, opts.pin_band * h);
+        let moved = pull_back_inside(&mut m, &pins, &stay, s, opts.pin_band * h);
         if moved > 0 && m.validate(opts.check_self_intersections).ok() {
             report.pulled_back += moved;
             mesh = m;
