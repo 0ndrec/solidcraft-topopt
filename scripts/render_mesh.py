@@ -42,6 +42,9 @@ def rotation(yaw, pitch):
 
 def render(mesh, width, height, yaw, pitch, color, frame=None):
     """`frame`: the vertices that set the framing (default: the mesh's own)."""
+    # Normals are not averaged across sharp edges: a large flat face whose corners it shares with
+    # a steep wall would otherwise be shaded in blotches.
+    mesh = mesh.smooth_shaded
     ss = 2
     W, H = width * ss, height * ss
     v = np.asarray(mesh.vertices, dtype=np.float64)

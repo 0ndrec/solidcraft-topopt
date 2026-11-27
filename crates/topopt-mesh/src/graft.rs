@@ -319,6 +319,46 @@ fn ear_clip(poly: &[u32], q: &[[f64; 2]]) -> Option<Vec<[u32; 3]>> {
     Some(tris)
 }
 
+/// Removes islands: pieces of the result the cut has cut off from the rest. Small ones (64
+/// triangles or fewer: a sliver of a wall next to the outline), and any lying all on or next to
+/// the kept faces (a ring around a hole the cut went round). Their loops would match no outline.
+/// Returns the triangles removed.
+fn drop_islands(mesh: &Mesh, original: &Original, keep: &[bool], h: f64, rest: &mut Vec<[u32; 3]>) -> usize {
+    let tmp = Mesh { positions: mesh.positions.clone(), triangles: rest.clone() };
+    let (comp, count) = tmp.components();
+    if count < 2 {
+        return 0;
+    }
+    let mut size = vec![0usize; count];
+    for &c in &comp {
+        size[c as usize] += 1;
+    }
+    let largest = (0..count).max_by_key(|&c| size[c]).unwrap_or(0);
+    let mut drop: Vec<bool> = (0..count).map(|c| c != largest).collect();
+    for (t, tri) in rest.iter().enumerate() {
+        let c = comp[t] as usize;
+        if !drop[c] || size[c] <= 64 {
+            continue;
+        }
+        for &v in tri {
+            let p = mesh.positions[v as usize];
+            let (proj, (k, _)) = original.shape.project_local_point_and_get_location(v3(p), false);
+            if !keep[k as usize] || norm(sub(p, [proj.point.x, proj.point.y, proj.point.z])) > h {
+                drop[c] = false;
+                break;
+            }
+        }
+    }
+    let before = rest.len();
+    let mut k = 0;
+    rest.retain(|_| {
+        let c = comp[k] as usize;
+        k += 1;
+        !drop[c]
+    });
+    before - rest.len()
+}
+
 /// A vertex with more than one boundary half-edge leaving it (two holes touching there), if any.
 fn pinched_vertex(triangles: &[[u32; 3]]) -> Option<u32> {
     let mut half: std::collections::HashSet<(u32, u32)> = std::collections::HashSet::new();
@@ -443,6 +483,44 @@ impl Stitch {
     /// collapsed. The original surface's triangles are never changed. Returns the repairs made.
     fn mend(&mut self, tiny: f64) -> usize {
         let mut flips = 0;
+        // A triangle and its mirror image (the same corners, the other way round) are a flap of
+        // no thickness: both go, and their edges are left with the triangles on either side. One
+        // of the original surface's stays, the other goes.
+        let mut by_corners: HashMap<[u32; 3], Vec<usize>> = HashMap::new();
+        for (t, tri) in self.triangles.iter().enumerate() {
+            let mut k = *tri;
+            k.sort_unstable();
+            by_corners.entry(k).or_default().push(t);
+        }
+        let mut gone = vec![false; self.triangles.len()];
+        for list in by_corners.values().filter(|l| l.len() == 2) {
+            let (a, b) = (list[0], list[1]);
+            let (ta, tb) = (self.triangles[a], self.triangles[b]);
+            let rot = |t: [u32; 3], k: usize| [t[k], t[(k + 1) % 3], t[(k + 2) % 3]];
+            let mirrored = (0..3).any(|k| rot(tb, k) == [ta[0], ta[2], ta[1]]);
+            if !mirrored {
+                continue;
+            }
+            match (self.patch[a], self.patch[b]) {
+                (false, false) => {
+                    gone[a] = true;
+                    gone[b] = true;
+                }
+                (true, false) => gone[b] = true,
+                (false, true) => gone[a] = true,
+                (true, true) => {}
+            }
+        }
+        if gone.iter().any(|&g| g) {
+            let mut k = 0;
+            let patch = std::mem::take(&mut self.patch);
+            self.triangles.retain(|_| {
+                k += 1;
+                !gone[k - 1]
+            });
+            self.patch = patch.into_iter().zip(&gone).filter(|(_, g)| !**g).map(|(p, _)| p).collect();
+            flips += gone.iter().filter(|&&g| g).count();
+        }
         for _ in 0..200 {
             let tmp = Mesh { positions: self.positions.clone(), triangles: self.triangles.clone() };
             let mut bad: Vec<u32> = crate::mesh::folded_triangles(&tmp);
@@ -534,11 +612,123 @@ impl Stitch {
                 }
             }
             if !done {
+                // No flip helps: collapse an edge of a bad triangle instead, moving a vertex of the
+                // result (never one of the original surface's) onto its neighbour, when the mesh
+                // stays manifold (the link condition) and no triangle turns over.
+                if let Some((gone, into)) = self.collapsible(&bad, &on_patch, &star) {
+                    let mut kept = Vec::with_capacity(self.triangles.len());
+                    let mut flags = Vec::with_capacity(self.triangles.len());
+                    for (t, &p) in self.triangles.iter().zip(&self.patch) {
+                        let t = t.map(|v| if v == gone { into } else { v });
+                        if t[0] != t[1] && t[1] != t[2] && t[0] != t[2] {
+                            kept.push(t);
+                            flags.push(p);
+                        }
+                    }
+                    self.triangles = kept;
+                    self.patch = flags;
+                    flips += 1;
+                    continue;
+                }
                 break;
             }
         }
         self.index();
         flips
+    }
+
+    /// Untangles the seam: the result's own vertices (`< base`, on no patch triangle) within
+    /// `band` of the outline move to the mean of their neighbours, `rounds` times; one that lay on
+    /// the original surface goes back onto it, but never onto a kept face (it would sit on top of
+    /// the patch: such a vertex stays put). Returns the vertices moved.
+    fn relax(&mut self, base: u32, original: &Original, keep: &[bool], near_outline: &dyn Fn([f64; 3]) -> bool, h: f64, rounds: usize) -> usize {
+        let on_patch: std::collections::HashSet<u32> =
+            self.triangles.iter().zip(&self.patch).filter(|(_, p)| **p).flat_map(|(t, _)| *t).collect();
+        let mut neighbours: HashMap<u32, Vec<u32>> = HashMap::new();
+        for t in &self.triangles {
+            for k in 0..3 {
+                neighbours.entry(t[k]).or_default().push(t[(k + 1) % 3]);
+            }
+        }
+        let movable: Vec<u32> = neighbours
+            .keys()
+            .copied()
+            .filter(|&v| v < base && !on_patch.contains(&v) && near_outline(self.positions[v as usize]))
+            .collect();
+        let on_surface: HashMap<u32, bool> = movable
+            .iter()
+            .map(|&v| (v, original.shape.distance_to_local_point(v3(self.positions[v as usize]), false) <= 1e-6 * h))
+            .collect();
+        let mut moved = 0;
+        for _ in 0..rounds {
+            let next: Vec<(u32, [f64; 3])> = movable
+                .iter()
+                .map(|&v| {
+                    let ns = &neighbours[&v];
+                    let n = ns.len() as f64;
+                    let mean = ns.iter().fold([0.0; 3], |a, &u| {
+                        let p = self.positions[u as usize];
+                        [a[0] + p[0] / n, a[1] + p[1] / n, a[2] + p[2] / n]
+                    });
+                    (v, mean)
+                })
+                .collect();
+            for (v, mut p) in next {
+                if on_surface[&v] {
+                    let (proj, (t, _)) = original.shape.project_local_point_and_get_location(v3(p), false);
+                    if keep[t as usize] {
+                        continue;
+                    }
+                    p = [proj.point.x, proj.point.y, proj.point.z];
+                }
+                self.positions[v as usize] = p;
+                moved += 1;
+            }
+        }
+        moved
+    }
+
+    /// An edge of one of the `bad` triangles to collapse, (gone, into): `gone` is the result's own
+    /// vertex, the two share exactly the two neighbours across the edge, and every triangle
+    /// around `gone` that stays keeps facing the way it did.
+    fn collapsible(&self, bad: &[u32], on_patch: &std::collections::HashSet<u32>, star: &HashMap<u32, Vec<usize>>) -> Option<(u32, u32)> {
+        let normal = |t: [u32; 3]| {
+            let p = |v: u32| self.positions[v as usize];
+            cross(sub(p(t[1]), p(t[0])), sub(p(t[2]), p(t[0])))
+        };
+        let ring = |v: u32| -> std::collections::HashSet<u32> {
+            star.get(&v).into_iter().flatten().flat_map(|&t| self.triangles[t]).filter(|&u| u != v).collect()
+        };
+        for &t in bad {
+            let tri = self.triangles[t as usize];
+            for k in 0..3 {
+                for (gone, into) in [(tri[k], tri[(k + 1) % 3]), (tri[(k + 1) % 3], tri[k])] {
+                    if on_patch.contains(&gone) {
+                        continue;
+                    }
+                    let common: Vec<u32> = ring(gone).intersection(&ring(into)).copied().collect();
+                    let across: Vec<u32> = star[&gone]
+                        .iter()
+                        .map(|&s| self.triangles[s])
+                        .filter(|s| s.contains(&into))
+                        .filter_map(|s| s.iter().copied().find(|&c| c != gone && c != into))
+                        .collect();
+                    if common.len() != across.len() || !common.iter().all(|c| across.contains(c)) {
+                        continue;
+                    }
+                    let ok = star[&gone].iter().map(|&s| self.triangles[s]).filter(|s| !s.contains(&into)).all(|s| {
+                        let after = s.map(|v| if v == gone { into } else { v });
+                        let (n0, n1) = (normal(s), normal(after));
+                        let l = norm(n1);
+                        l > 1e-9 * norm(n0).max(1e-300) && dot(n0, n1) > 0.0
+                    });
+                    if ok {
+                        return Some((gone, into));
+                    }
+                }
+            }
+        }
+        None
     }
 
     /// Whether splitting the triangle on half-edge `u`→`v` at `points` (a fan from its third
@@ -874,46 +1064,11 @@ fn graft(mesh: &Mesh, original: &Original, keep: &[bool], h: f64, check: bool, m
         rest.retain(|t| !t.iter().any(|&v| near[v as usize]));
         stats.removed += before - rest.len();
     }
-    // Islands: pieces of the result left inside the cut, all of them on or next to the kept faces
-    // (a ring around a hole the cut went round). They would leave a loop no outline matches.
-    {
-        let tmp = Mesh { positions: mesh.positions.clone(), triangles: rest.clone() };
-        let (comp, count) = tmp.components();
-        if count > 1 {
-            let mut size = vec![0usize; count];
-            for &c in &comp {
-                size[c as usize] += 1;
-            }
-            let largest = (0..count).max_by_key(|&c| size[c]).unwrap_or(0);
-            let mut near_kept = vec![true; count];
-            for (t, tri) in rest.iter().enumerate() {
-                let c = comp[t] as usize;
-                if c == largest || !near_kept[c] {
-                    continue;
-                }
-                for &v in tri {
-                    let p = mesh.positions[v as usize];
-                    let (proj, (k, _)) = original.shape.project_local_point_and_get_location(v3(p), false);
-                    if !keep[k as usize] || norm(sub(p, [proj.point.x, proj.point.y, proj.point.z])) > h {
-                        near_kept[c] = false;
-                        break;
-                    }
-                }
-            }
-            let before = rest.len();
-            let mut k = 0;
-            rest.retain(|_| {
-                let c = comp[k] as usize;
-                k += 1;
-                c == largest || !near_kept[c]
-            });
-            stats.removed += before - rest.len();
-        }
-    }
     // Where two cuts touch at a vertex, cut its triangles too, until the cut's loops are simple.
     let holes = {
         let mut tries = 0;
         loop {
+            stats.removed += drop_islands(mesh, original, keep, h, &mut rest);
             match pinched_vertex(&rest) {
                 None => break boundary_loops(&rest)?,
                 Some(v) if tries < 64 => {
@@ -1181,6 +1336,18 @@ fn graft(mesh: &Mesh, original: &Original, keep: &[bool], h: f64, check: bool, m
     }
 
     s.mend(1e-6 * h);
+    // Still folded or crossing next to the seam: untangle there and mend again.
+    {
+        let tmp = Mesh { positions: s.positions.clone(), triangles: s.triangles.clone() };
+        let tangled = !crate::mesh::folded_triangles(&tmp).is_empty()
+            || !crate::mesh::degenerate_triangles(&tmp).is_empty()
+            || (check && !crate::intersect::find_self_intersections(&tmp).is_empty());
+        if tangled {
+            let near = |p: [f64; 3]| outline_shape.distance_to_local_point(v3(p), false) <= 2.5 * h;
+            s.relax(base, original, keep, &near, h, 12);
+            s.mend(1e-6 * h);
+        }
+    }
     let mut out = Mesh { positions: s.positions, triangles: s.triangles };
     out.compact();
     let r = out.validate(check);

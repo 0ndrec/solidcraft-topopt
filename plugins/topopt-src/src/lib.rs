@@ -516,7 +516,13 @@ fn remesh() -> Result<Value, PluginError> {
     let mut result = study.result.clone().unwrap_or_default();
     result.stl = path;
     result.inserted = false;
-    result.warnings.retain(|w| !w.starts_with("the sharp edges"));
+    // The mesh's own warnings are made afresh.
+    result.warnings.retain(|w| {
+        !w.starts_with("the sharp edges")
+            && !w.contains("kept surfaces could not take the CAD model's own triangles")
+            && !w.starts_with("the mesh could not be made")
+            && !w.starts_with("the body was inserted as a mesh")
+    });
     result.warnings.extend(topopt_study::mesh_warnings(&study, &full, surface_ref.is_some()));
     result.triangles = report.triangles;
     result.genus = report.genus;

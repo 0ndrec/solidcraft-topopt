@@ -473,16 +473,18 @@ pub fn make_mesh(study: &Study, density: &Density, surface: Surface) -> Result<(
         ..Default::default()
     };
     let h = field.h;
-    let (mut mesh, mut report) = topopt_mesh::extract_with(field, Some(&anchors), None, projector.as_ref(), &opts)?;
-    // Kept faces exactly as the CAD model has them: its own triangles there, stitched in.
+    // Kept faces exactly as the CAD model has them: its own triangles there, stitched in after the
+    // mesh is made.
     let kept_faces: Vec<i64> = study
         .conditions
         .iter()
         .filter(|c| matches!(c, Condition::Keep { .. }))
         .flat_map(|c| c.faces().iter().map(|f| f.index))
         .collect();
-    if let Some(s) = surface.filter(|s| !kept_faces.is_empty() && s.faces.len() == s.triangles.len() && !s.triangles.is_empty()) {
-        let keep: Vec<bool> = s.faces.iter().map(|f| kept_faces.contains(f)).collect();
+    let graft = surface.filter(|s| !kept_faces.is_empty() && s.faces.len() == s.triangles.len() && !s.triangles.is_empty());
+    let keep: Vec<bool> = graft.map(|s| s.faces.iter().map(|f| kept_faces.contains(f)).collect()).unwrap_or_default();
+    let (mut mesh, mut report) = topopt_mesh::extract_with(field, Some(&anchors), None, projector.as_ref(), &opts)?;
+    if let Some(s) = graft {
         let (grafted, g) = topopt_mesh::graft_kept_faces(&mesh, (s.positions, s.triangles), &keep, h, opts.check_self_intersections);
         if g.grafted > 0 {
             mesh = grafted;

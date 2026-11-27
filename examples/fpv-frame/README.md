@@ -55,7 +55,7 @@ The arms became open trusses: two flanges along the arm's edges, which carry the
 | | Blank | Optimized |
 |---|---|---|
 | Mass | 38.2 g | **11.8 g** (−69 %) |
-| Volume | 30 081 mm³ | 9 310 mm³ (31 % of the blank) |
+| Volume | 30 081 mm³ | 9 316 mm³ (31 % of the blank) |
 | Full throttle: largest deflection | 0.42 mm | 1.27 mm |
 | Full throttle: von Mises stress, 99 % of the material below / peak | 1.4 / 3.0 MPa | 3.2 / 5.0 MPa |
 | Side hit: largest deflection | 0.08 mm | 0.37 mm |
@@ -72,7 +72,7 @@ The **Run** tab of the panel shows them after the run:
 
 **How the numbers were checked.** After the optimization the result is made solid where its density reaches the surface threshold and empty elsewhere, and analysed once more under each load case ([`Optimizer::check`](../../docs/topopt-core.md#the-optimizer)). It gives the largest displacement and the von Mises stress of every element. The blank's numbers come from the same analysis of the whole body ([`check_job`](../../crates/topopt-study/examples/check_job.rs)). The analysis agrees with beam theory on a solid cantilever: deflection within 1.5 %, bending stress within 0.4 % ([`tests/stress.rs`](../../crates/topopt-core/tests/stress.rs)). On voxels the single highest stress is exaggerated at the supports and at stair-stepped corners, so compare the 99th percentile with the material's strength.
 
-**The run.** 176 iterations to convergence in 18 minutes on an NVIDIA Quadro P620 (TopOpt CUDA Solver; 52 832 elements, 5 load cases). Three of the four motor seats came out as the CAD model's own triangles. On the fourth the stitching did not close, so it is the optimizer's surface pinned to the seat face: within about a tenth of an element of it, but less smooth.
+**The run.** 176 iterations to convergence in 18 minutes on an NVIDIA Quadro P620 (TopOpt CUDA Solver; 52 832 elements, 5 load cases). All four motor seats came out as the CAD model's own triangles: sampled 3 000 times, no point of them is off the CAD faces (0.0000 mm).
 
 ## Reproduce it
 

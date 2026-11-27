@@ -1,46 +1,47 @@
 {
  "body": {
   "body": "Frame (2)",
+  "convert_error": null,
   "converted": true,
   "measure": {
-   "area_mm2": 17295.442595587712,
+   "area_mm2": 17296.641980157314,
    "bbox": {
     "max": [
      53.420021057128906,
-     53.4244384765625,
+     53.424034118652344,
      6.5224809646606445
     ],
     "min": [
-     -53.42445373535156,
+     -53.42484664916992,
      -53.424835205078125,
-     -0.0029734617564827204
+     -0.008564867079257965
     ]
    },
    "center_of_mass": [
-    -0.016195240239072265,
-    -0.02100521410396873,
-    3.3227687479925128
+    0.0023665535980743526,
+    -0.0030572394451244215,
+    3.324173909083572
    ],
    "closed": true,
    "density_g_cm3": 1.29,
-   "edges": 35810,
+   "edges": 35540,
    "face_types": {
-    "plane": 22245
+    "plane": 22068
    },
-   "faces": 22245,
+   "faces": 22068,
    "kernel": {
-    "edges": 37459,
-    "faces": 23534,
+    "edges": 37132,
+    "faces": 23344,
     "shells": 1,
-    "vertices": 13667
+    "vertices": 13532
    },
-   "mass_g": 12.010349172746606,
+   "mass_g": 12.017123914677391,
    "material": "Default",
    "measured_by": "smlib",
    "name": "Frame (2)",
    "notes": [],
-   "vertices": 13307,
-   "volume_mm3": 9310.3481959276
+   "vertices": 13216,
+   "volume_mm3": 9315.599933858444
   }
  },
  "result": {
@@ -92,21 +93,20 @@
   "h": 0.8240000000000001,
   "inserted": true,
   "iterations": 176,
-  "mass_g": 11.824142232754422,
+  "mass_g": 11.830811841249394,
   "max_displacement_mm": 1.2727097594480543,
-  "mesh_volume_mm3": 9310.348214767262,
+  "mesh_volume_mm3": 9315.599874999523,
   "outcome": "converged",
   "seconds": 1089.7783535,
   "solver": "Quadro P620 (CUDA, sm_61)",
   "stl": "topopt/Frame.ply",
   "stress_max_mpa": 5.035020690202613,
   "stress_p99_mpa": 3.1826009109527083,
-  "triangles": 29836,
+  "triangles": 29756,
   "trimmed": 0.0,
-  "volume_fraction": 0.3095071880096531,
+  "volume_fraction": 0.3096817708021948,
   "warnings": [
    "element size 0.8 mm needs 221952 elements; raised to stay under 200000",
-   "1 of 4 kept surfaces could not take the CAD model's own triangles and are approximated (patch 1: 7 holes cut for 6 outline loops)",
    "solved by TopOpt Solver on Quadro P620 (CUDA, sm_61)"
   ]
  }
