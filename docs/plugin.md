@@ -1,6 +1,6 @@
 # The TopOpt plugin for SolidCraft — user guide
 
-The TopOpt plugin (v0.12.0, SolidCraft 0.49.1 and 0.50) does **topology optimization** in your model. You say where material may go, where the part is held and where it is pushed; the plugin finds the stiffest shape from the share of material you allow and inserts it into the model as a body.
+The TopOpt plugin (v0.12.1, SolidCraft 0.49.1 and 0.50) does **topology optimization** in your model. You say where material may go, where the part is held and where it is pushed; the plugin finds the stiffest shape from the share of material you allow and inserts it into the model as a body.
 
 ![The TopOpt panel and ribbon in SolidCraft, with the FPV frame study (examples/fpv-frame)](images/solidcraft-panel.png)
 

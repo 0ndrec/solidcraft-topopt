@@ -113,4 +113,4 @@ xtask/                  componentize the plugin without wasm-tools
 
 ## License
 
-Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or [MIT license](LICENSE-MIT) at your option. `wit/plugin.wit` is SolidCraft's, under the same terms ([wit/README.md](wit/README.md)).
+Licensed under the [Apache License, Version 2.0](LICENSE). `wit/plugin.wit` is SolidCraft's, licensed MIT OR Apache-2.0 ([wit/README.md](wit/README.md)).

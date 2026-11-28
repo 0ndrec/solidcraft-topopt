@@ -3,8 +3,8 @@
   "id": "topopt",
   "name": "TopOpt",
   "kind": "plugin",
-  "version": "0.12.0",
-  "licence": "MIT OR Apache-2.0",
+  "version": "0.12.1",
+  "licence": "Apache-2.0",
   "min_app_version": "0.49.1",
   "summary": "Topology optimization: pick a body, supports and loads; get a light, stiff part as a mesh or solid, with a stress check.",
   "description": "WORKSHOP.md",
@@ -29,7 +29,7 @@
   ],
   "files": [
     {
-      "asset": "topopt-0.12.0.zip",
+      "asset": "topopt-0.12.1.zip",
       "role": "package"
     },
     {

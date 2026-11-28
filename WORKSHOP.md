@@ -26,4 +26,4 @@ No network access.
 - [Choosing the settings](https://github.com/0ndrec/solidcraft-topopt/blob/main/docs/settings-guide.md), measured on one bracket
 - [FPV frame example](https://github.com/0ndrec/solidcraft-topopt/blob/main/examples/fpv-frame/README.md)
 
-Licence: MIT OR Apache-2.0.
+Licence: Apache-2.0.
