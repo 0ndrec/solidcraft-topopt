@@ -159,3 +159,45 @@ fn trimming_through_solve_stays_within_its_stiffness_budget() {
         }
     }
 }
+
+/// A block loaded right above one support, with a second support at the far end: the stiffest
+/// use of the material leaves the far support without any.
+fn two_supports(join: bool) -> Spec {
+    let mut s = small();
+    s.domain = Shape::Box { min: [0.0, 0.0, 0.0], max: [120.0, 40.0, 20.0] };
+    s.supports = vec![
+        SupportSpec { region: Region::Box { min: [0.0, 0.0, 0.0], max: [12.0, 40.0, 0.0], tolerance: None }, dirs: [true; 3] },
+        SupportSpec { region: Region::Box { min: [108.0, 12.0, 0.0], max: [120.0, 28.0, 0.0], tolerance: None }, dirs: [true; 3] },
+    ];
+    s.loads = vec![LoadSpec { region: Region::Box { min: [0.0, 0.0, 20.0], max: [12.0, 40.0, 20.0], tolerance: None }, force: [0.0, 0.0, -1000.0], case: 1 }];
+    s.settings.volfrac = 0.15;
+    s.settings.max_elements = 8000;
+    s.settings.max_iterations = 200;
+    s.settings.connect_supports = join;
+    s
+}
+
+#[test]
+fn every_support_is_joined_to_the_part() {
+    let joined_after = |join: bool| {
+        let job = prepare_spec(&two_supports(join), &no_files, &mut Quiet).unwrap();
+        let groups = topopt_study::joints::support_groups(&job.problem);
+        assert_eq!(groups.len(), 2);
+        let out = solve(&job, &mut Quiet).unwrap();
+        let phys: Vec<f64> = out.density.values.iter().map(|&v| v as f64).collect();
+        let joined = topopt_study::joints::joined(&job.problem, &phys, 0.5, &groups, 1);
+        (joined, out.result)
+    };
+    // Without joining, the far support is left out, and the warnings say so.
+    let (plain, plain_result) = joined_after(false);
+    assert_eq!(plain, vec![true, false]);
+    assert!(plain_result.warnings.iter().any(|w| w.contains("1 of 2 supports are not joined")), "{:?}", plain_result.warnings);
+    // With it, the study is optimized again with the far support holding the load alone.
+    let (both, result) = joined_after(true);
+    assert_eq!(both, vec![true, true]);
+    assert!(result.warnings.iter().any(|w| w.starts_with("1 of 2 supports had no material at first")), "{:?}", result.warnings);
+    // The compliance reported is that of the real load: the strut to the far support costs some
+    // stiffness, not orders of magnitude.
+    assert_eq!(result.cases.len(), 1);
+    assert!(result.compliance < 3.0 * plain_result.compliance, "{} vs {}", result.compliance, plain_result.compliance);
+}

@@ -282,6 +282,7 @@ The same fields and defaults as the plugin:
 | `beta_max` | 16 | Final sharpness of the Heaviside projection |
 | `move_limit` | 0.2 | Largest density change of an element per iteration |
 | `use_solver` | true | Not used by specs (a plugin flag) |
+| `connect_supports` | true | Join every support to the part: supports the optimizer leaves without material are each made to hold the load alone in a helper load case, and the study is optimized again ([topopt-study.md](topopt-study.md#every-support-joined-joints)) |
 
 Elements are cubes. Grid dimensions are rounded up to multiples of 4 (of 2 when small) so multigrid can coarsen, which can leave the element count well below the budget; `check` shows the real count.
 

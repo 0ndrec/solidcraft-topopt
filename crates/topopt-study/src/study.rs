@@ -85,6 +85,10 @@ pub struct Settings {
     pub time_limit: f64,
     /// Hand Optimize to TopOpt Solver (all CPU cores) when it is running.
     pub use_solver: bool,
+    /// Join every support to the part: a support the optimizer leaves without material is made
+    /// to carry the load alone in a helper load case, and the study is optimized again (see
+    /// [`crate::joints`]).
+    pub connect_supports: bool,
     /// SIMP penalty.
     pub penal: f64,
     /// Final sharpness of the projection.
@@ -104,6 +108,7 @@ impl Default for Settings {
             max_iterations: 150,
             time_limit: 480.0,
             use_solver: true,
+            connect_supports: true,
             penal: 3.0,
             beta_max: 16.0,
             move_limit: 0.2,
@@ -404,6 +409,7 @@ impl Study {
             "settings/max_iterations" => s.max_iterations = pos(num()?, 1.0, 2000.0)? as usize,
             "settings/time_limit" => s.time_limit = pos(num()?, 10.0, 86_400.0)?,
             "settings/use_solver" => s.use_solver = flag()?,
+            "settings/connect_supports" => s.connect_supports = flag()?,
             "settings/penal" => s.penal = pos(num()?, 1.0, 6.0)?,
             "settings/beta_max" => s.beta_max = pos(num()?, 1.0, 128.0)?,
             "settings/move_limit" => s.move_limit = pos(num()?, 0.01, 0.5)?,

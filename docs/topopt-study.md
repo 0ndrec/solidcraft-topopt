@@ -86,7 +86,7 @@ pub struct Hit { pub point: [f64; 3], pub normal: [f64; 3], pub face: u32 }
 
 1. Ray hits are grouped by face; each condition takes the points of its faces (plus the picked point).
 2. Nodes within one element of those points that touch material become support or load nodes; a force is spread evenly over them.
-3. Cells within `pad` (default 1.5 elements) become **solid pads** (`ElementKind::Solid`): real mounting surfaces, and the anchors of mesh clean-up. A kept surface makes a pad `thickness` deep (or `pad`) and no boundary condition; its cells also go into `Built::kept` → `Job::kept` → `Density::kept`.
+3. Cells within `pad` (default 1.5 elements) become **solid pads** (`ElementKind::Solid`): real mounting surfaces. The pad cells under loads also go into `Built::loaded` → `Job::loaded` → `Density::loaded`: with the kept surfaces' cells, they are the anchors of mesh clean-up. A kept surface makes a pad `thickness` deep (or `pad`) and no boundary condition; its cells also go into `Built::kept` → `Job::kept` → `Density::kept`.
 4. Cells outside the body or inside a keep-out are `Void`.
 5. `finish_job`: the volume fraction is converted from a fraction of the body to a fraction of the design elements (accounting for the pads) and clamped to 0.05…0.95; the filter radius is `rmin = max(1.5, min_member / 2h)`.
 
@@ -94,7 +94,33 @@ Specs (`spec::assemble`) work the same way, except that nodes are chosen by **re
 
 ### Densities
 
-`Density { grid, values, pads, inside, filtered, kept }`: `values` are the physical densities the analysis used (after filter and projection), `filtered` the filtered densities before the projection, with pads 1 and outside 0. The projection makes `values` nearly 0 or 1 per element, so a surface through them follows the voxels; the filtered field varies smoothly and places the same surface (the projection's threshold equals the iso value) between element centres, which together with ×2 cubic upsampling gives round members. Densities saved before `filtered` existed deserialize with it empty and mesh from `values`. `kept` flags the cells under kept surfaces (empty when there are none); the mesh no longer uses them (kept faces are grafted, see [topopt-mesh.md](topopt-mesh.md#kept-faces-from-the-cad-model-graft)).
+`Density { grid, values, pads, inside, filtered, kept }`: `values` are the physical densities the analysis used (after filter and projection), `filtered` the filtered densities before the projection, with pads 1 and outside 0. The projection makes `values` nearly 0 or 1 per element, so a surface through them follows the voxels; the filtered field varies smoothly and places the same surface (the projection's threshold equals the iso value) between element centres, which together with ×2 cubic upsampling gives round members. Densities saved before `filtered` existed deserialize with it empty and mesh from `values`. `kept` flags the cells under kept surfaces (empty when there are none); kept faces are grafted, see [topopt-mesh.md](topopt-mesh.md#kept-faces-from-the-cad-model-graft).
+
+### Every support joined (`joints`)
+
+Minimum compliance with several rigid supports leads the load into the supports nearest to it. A support further away adds little stiffness, so the optimizer may leave it without any material. On the bracket of [settings-guide.md](settings-guide.md), bolted at seven holes, the plain optimum used 3 to 5 of them depending on Keep. The other holes stayed as pads floating beside the part. For a part bolted at several holes that is wrong.
+
+With `settings.connect_supports` (on by default), `solve` works in up to three stages:
+
+1. It optimizes the study, then checks which support groups the material joins to the loads. `support_groups` splits the supports into pieces that do not touch, one per hole. `joined` follows the material above the iso value from the elements holding a load; elements sharing a node count as joined, as they do in the analysis.
+2. When some groups were left out, it optimizes again from the start. This time the problem has a **helper load case** for each such group (`with_helper_cases`): the forces of all load cases together, divided by the number of groups, with the part held by that group alone (`LoadCase::supports`). The case is `relative`, with weight `HELPER_WEIGHT` = 0.1. On the starting design it counts 0.1 times the real loads. Its compliance has no bound while nothing joins that support to the loads, so the optimizer has to build the path. Once the path exists, the case only keeps it.
+3. If yet another group is left out, there is a third stage with that group added.
+
+Only groups fixed in all three directions at three or more nodes not on one line can hold the part alone (`SupportGroup::holds_alone`); others get no helper case. The compliance, the check and the trimming report the real load cases (`Optimizer::keep_cases`). The trimming runs with the helper cases, so a strut joining a support is never dead weight.
+
+The warnings say:
+- how many supports needed the second stage;
+- which support, by position, is still not joined, and why;
+- with the setting off, how many supports are not joined.
+
+Cost: one more solver (memory and update) and one more solve per iteration for each helper case. On the bracket (Keep 30 %, 100 000 elements, TopOpt CUDA Solver):
+
+- three of seven holes needed helper cases;
+- the run took 645 s instead of 146 s;
+- every hole was joined;
+- the compliance under the real loads was 36 % higher than that of the part that used only four holes. With the same material, the plate that joins the far holes is taken from the main load path.
+
+At a weight of 0.3 the cost was 55 %; at 1 without normalization, 75 %.
 
 ### Trimming dead weight (`trim`)
 
@@ -144,7 +170,7 @@ Without face numbers (just a mesh or an STL), a spec is simpler: `prepare_spec` 
 | File | Checks |
 |---|---|
 | `tests/run.rs` | Box voxelization (volume within 4 %, all 6 faces sampled, no unbalanced rays); an end-to-end "support −X, load +X" study; a "normal" load equals the vector |
-| `tests/spec.rs` | The example spec solves; box, inline mesh and STL in metres (`scale` 1000) voxelize alike; keep-outs; clear region errors; JSON round trip; the filtered field is saved (pads 1, outside 0) and meshes ×2, ×1 and from older files; trimming through `solve` |
+| `tests/spec.rs` | The example spec solves; box, inline mesh and STL in metres (`scale` 1000) voxelize alike; keep-outs; clear region errors; JSON round trip; the filtered field is saved (pads 1, outside 0) and meshes ×2, ×1 and from older files; trimming through `solve`; a block loaded above one of two supports: without joining, the far support is left out and the warnings say so; with it, both are joined and the compliance of the real load stays within 3× |
 | `tests/spec.rs` (fillets) | Fillets only add material, a larger radius more, and not much |
 | `tests/trim.rs` | A spike near a beam's free end is trimmed, the beam kept (the same spike mid-span stiffens the flange and stays) |
 | unit | `set_option` and study JSON, "next step" hints through the steps, protocol parts and heartbeat |

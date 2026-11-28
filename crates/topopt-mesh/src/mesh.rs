@@ -123,6 +123,36 @@ pub fn folded_triangles(m: &Mesh) -> Vec<u32> {
     out
 }
 
+/// Triangles turned over: each of the three triangles beside it faces more than 120° away from
+/// it. Such a triangle lies flipped inside the surface (a sliver whose corner went across its
+/// opposite edge). Neither a crossing nor a flat fold (see [`folded_triangles`]), so the mesh is
+/// still valid, but a CAD kernel cannot sew it into a solid. A sharp corner of a part is far from
+/// it: its faces meet at 90° or so.
+pub fn inverted_triangles(m: &Mesh) -> Vec<u32> {
+    let mut by_edge: HashMap<(u32, u32), u32> = HashMap::with_capacity(m.triangles.len() * 3);
+    for (t, tri) in m.triangles.iter().enumerate() {
+        for e in 0..3 {
+            by_edge.insert((tri[e], tri[(e + 1) % 3]), t as u32);
+        }
+    }
+    (0..m.triangles.len())
+        .filter(|&t| {
+            let tri = m.triangles[t];
+            let n = m.face_normal(t);
+            let ln = norm(n);
+            let against = |e: usize, cos: f64| {
+                by_edge.get(&(tri[(e + 1) % 3], tri[e])).is_some_and(|&s| {
+                    let q = m.face_normal(s as usize);
+                    let lq = norm(q);
+                    lq > 0.0 && (n[0] * q[0] + n[1] * q[1] + n[2] * q[2]) < cos * ln * lq
+                })
+            };
+            ln > 0.0 && (0..3).all(|e| against(e, -0.5))
+        })
+        .map(|t| t as u32)
+        .collect()
+}
+
 pub fn degenerate_triangles(m: &Mesh) -> Vec<u32> {
     let scale = m.mean_edge().max(1e-300);
     (0..m.triangles.len())

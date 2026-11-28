@@ -53,10 +53,25 @@ pub struct LoadCase {
     #[serde(default = "one")]
     pub weight: f64,
     pub forces: Vec<NodeForce>,
+    /// The supports of this case, in place of the problem's; `None`: the problem's. A case held
+    /// by one of several supports only makes the optimizer join that support to the loads.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supports: Option<Vec<NodeFix>>,
+    /// `weight` is relative: the case counts `weight` times the other cases' weighted compliance
+    /// on the starting design, scaled by how its own compliance has changed since then. Its
+    /// influence is then the same whatever its forces and supports (a helper case held by one
+    /// far support would otherwise outweigh the real loads), and it still grows without bound
+    /// when the material it needs is taken away.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub relative: bool,
 }
 
 fn one() -> f64 {
     1.0
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -89,6 +104,17 @@ impl Problem {
         if self.supports.is_empty() {
             return Err("no supports: the part could move freely".into());
         }
+        for (k, c) in self.load_cases.iter().enumerate() {
+            match &c.supports {
+                Some(s) if s.is_empty() => return Err(format!("load case {k} has no supports: the part could move freely")),
+                Some(s) => {
+                    if let Some(f) = s.iter().find(|f| f.node >= nn) {
+                        return Err(format!("load case {k}: support node {} is outside the grid", f.node));
+                    }
+                }
+                None => {}
+            }
+        }
         if self.load_cases.is_empty() || self.load_cases.iter().all(|c| c.forces.is_empty()) {
             return Err("no loads".into());
         }
@@ -118,8 +144,17 @@ impl Problem {
 
     /// One flag per dof: held by a support.
     pub fn fixed_dofs(&self) -> Vec<bool> {
+        self.fixed_by(&self.supports)
+    }
+
+    /// The dofs held in load case `c` (its own supports, or the problem's).
+    pub fn case_fixed_dofs(&self, c: usize) -> Vec<bool> {
+        self.fixed_by(self.load_cases[c].supports.as_deref().unwrap_or(&self.supports))
+    }
+
+    fn fixed_by(&self, supports: &[NodeFix]) -> Vec<bool> {
         let mut fixed = vec![false; self.grid.ndof()];
-        for s in &self.supports {
+        for s in supports {
             for d in 0..3 {
                 if s.dirs[d] {
                     fixed[3 * s.node + d] = true;
@@ -131,23 +166,23 @@ impl Problem {
 
     /// The force vector of each load case (zero on fixed dofs).
     pub fn force_vectors(&self, fixed: &[bool]) -> Vec<Vec<f64>> {
-        self.load_cases
-            .iter()
-            .map(|c| {
-                let mut f = vec![0.0; self.grid.ndof()];
-                for nf in &c.forces {
-                    for d in 0..3 {
-                        f[3 * nf.node + d] += nf.f[d];
-                    }
-                }
-                for (fi, &x) in f.iter_mut().zip(fixed) {
-                    if x {
-                        *fi = 0.0;
-                    }
-                }
-                f
-            })
-            .collect()
+        (0..self.load_cases.len()).map(|c| self.force_vector(c, fixed)).collect()
+    }
+
+    /// The force vector of load case `c` (zero on fixed dofs).
+    pub fn force_vector(&self, c: usize, fixed: &[bool]) -> Vec<f64> {
+        let mut f = vec![0.0; self.grid.ndof()];
+        for nf in &self.load_cases[c].forces {
+            for d in 0..3 {
+                f[3 * nf.node + d] += nf.f[d];
+            }
+        }
+        for (fi, &x) in f.iter_mut().zip(fixed) {
+            if x {
+                *fi = 0.0;
+            }
+        }
+        f
     }
 
     /// Nodes whose position lies in the box `[lo, hi]` (mm, inclusive, with a small tolerance).
@@ -183,7 +218,7 @@ impl Problem {
         let nodes = self.nodes_in_box(lo, hi);
         let n = nodes.len().max(1) as f64;
         let forces = nodes.iter().map(|&node| NodeForce { node, f: [total[0] / n, total[1] / n, total[2] / n] }).collect();
-        self.load_cases.push(LoadCase { weight: 1.0, forces });
+        self.load_cases.push(LoadCase { weight: 1.0, forces, supports: None, relative: false });
         nodes.len()
     }
 

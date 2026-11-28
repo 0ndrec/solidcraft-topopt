@@ -50,9 +50,16 @@ p.set_kind_box([50.0, 10.0, 10.0], [70.0, 30.0, 30.0], ElementKind::Void); // a 
 | `material` | `e` (MPa), `nu`; default aluminium-like 70 000 / 0.33 |
 | `kinds` | One kind per element: `Design` (the optimizer chooses its density), `Solid` (always 1), `Void` (always 0). Empty means all `Design` |
 | `supports` | `NodeFix { node, dirs: [bool; 3] }`: a node held along the chosen axes |
-| `load_cases` | `LoadCase { weight, forces: Vec<NodeForce { node, f: [f64; 3] }> }`; the objective is the weighted sum of compliances |
+| `load_cases` | `LoadCase { weight, forces: Vec<NodeForce { node, f: [f64; 3] }>, supports, relative }`; the objective is the weighted sum of compliances |
 
-`validate()` checks the length of `kinds` and the node indices, that there are supports and loads, non-negative weights, E > 0 and at least one `Design` element. `Optimizer::new` calls it.
+Two optional fields of a load case, both left out of the JSON when not used:
+
+- `supports: Option<Vec<NodeFix>>`: this case's own supports, in place of the problem's. Each distinct set of supports gets its own linear solver (and multigrid hierarchy), so each such case costs one more solver's memory and update per iteration.
+- `relative: bool`: `weight` is relative. At the first evaluation (the starting design), the case's weight becomes `weight × (the other cases' weighted compliance) / (its own compliance)`. The case then starts at `weight` times the real loads, whatever its forces and supports, and grows as its own compliance does.
+
+`topopt-study` uses both for supports the optimizer would leave without material ([topopt-study.md](topopt-study.md#every-support-joined-joints)).
+
+`validate()` checks the length of `kinds` and the node indices (a case's own supports too), that there are supports (and that no case has an empty set of its own) and loads, non-negative weights, E > 0 and at least one `Design` element. `Optimizer::new` calls it.
 
 `Problem` is serde-serializable; that is how the plugin hands a problem to the solver.
 
@@ -91,7 +98,8 @@ let densities = &opt.x_phys; // physical densities 0…1 per element
 | Method or field | Purpose |
 |---|---|
 | `new(problem, settings)` | Checks, element matrix, filter, multigrid hierarchy |
-| `with_solver(problem, settings, Some(&factory))` | The same with the linear systems solved by another back-end (`topopt_cuda::factory` for a GPU) |
+| `with_solver(problem, settings, Some(&factory))` | The same with the linear systems solved by another back-end (`topopt_cuda::factory` for a GPU); the factory is called once per distinct set of supports |
+| `keep_cases(n)` | Drops the load cases after the first `n` (and the solvers only they used), to analyse the design under the real loads after helper cases shaped it |
 | `run(callback) -> Outcome` | Iterates until converged (`Converged`), the limit (`MaxIterations`) or `false` from the callback (`Cancelled`) |
 | `step() -> Iteration` | One iteration: FE solve, sensitivities, filter, OC |
 | `evaluate() -> Evaluation` | Compliance and gradients `dc`, `dv` at the current design, without a step |

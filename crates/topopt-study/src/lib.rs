@@ -9,6 +9,7 @@
 //!   multi-threaded TopOpt Solver through the files of [`solver`]).
 
 pub mod build;
+pub mod joints;
 pub mod solver;
 pub mod spec;
 pub mod status;
@@ -208,30 +209,92 @@ pub fn solve(job: &Job, hooks: &mut dyn Hooks) -> Result<Outcome, String> {
     let mut settings = job.settings;
     settings.mg = topopt_core::mg::MgSettings::default();
     let factory = hooks.solver();
-    let mut opt = Optimizer::with_solver(problem.clone(), settings, factory.as_ref())?;
-    let solver_name = opt.solver_name();
-    hooks.progress(0.05, &format!("optimizing on {solver_name}"));
-    warnings.extend(opt.solver_note());
     let max_iter = s.max_iterations.max(1);
+    let n_main = problem.load_cases.len();
+    // Every support joined to the part (see `joints`): optimize; when supports were left out,
+    // optimize again from the start with a helper case for each, at most twice.
+    let groups = if s.connect_supports { joints::support_groups(problem) } else { Vec::new() };
+    let staged = groups.len() >= 2;
+    let spans: [(f32, f32); 3] = if staged { [(0.05, 0.45), (0.45, 0.8), (0.8, 0.88)] } else { [(0.05, 0.9); 3] };
+    let mut helped: Vec<usize> = Vec::new();
+    let mut current = problem.clone();
     let mut stopped_by_time = false;
-    let outcome = opt.run(|it| {
-        hooks.progress(
-            0.05 + 0.85 * it.iter as f32 / max_iter as f32,
-            &format!("iteration {} — compliance {:.5}, β {}", it.iter, it.compliance, it.beta),
-        );
-        if hooks.elapsed() > s.time_limit {
-            stopped_by_time = true;
-            return false;
+    let mut stage = 0;
+    let (mut opt, outcome) = loop {
+        let mut opt = Optimizer::with_solver(current.clone(), settings, factory.as_ref())?;
+        if stage == 0 {
+            hooks.progress(0.05, &format!("optimizing on {}", opt.solver_name()));
+            warnings.extend(opt.solver_note());
         }
-        !hooks.cancelled()
-    })?;
-    if hooks.cancelled() {
-        return Err("cancelled".into());
-    }
+        let (lo, hi) = spans[stage];
+        let what = if helped.is_empty() { String::new() } else { format!("joining {} more supports: ", helped.len()) };
+        let outcome = opt.run(|it| {
+            hooks.progress(
+                lo + (hi - lo) * it.iter as f32 / max_iter as f32,
+                &format!("{what}iteration {} — compliance {:.5}, β {}", it.iter, it.compliance, it.beta),
+            );
+            if hooks.elapsed() > s.time_limit {
+                stopped_by_time = true;
+                return false;
+            }
+            !hooks.cancelled()
+        })?;
+        if hooks.cancelled() {
+            return Err("cancelled".into());
+        }
+        if !staged || stopped_by_time || stage == 2 {
+            break (opt, outcome);
+        }
+        let ok = joints::joined(problem, &opt.x_phys, study.mesh.iso, &groups, n_main);
+        let missing: Vec<usize> = (0..groups.len()).filter(|&k| !ok[k] && !helped.contains(&k) && groups[k].holds_alone(problem)).collect();
+        if missing.is_empty() {
+            break (opt, outcome);
+        }
+        helped.extend(missing);
+        helped.sort_unstable();
+        current = joints::with_helper_cases(problem, &groups, &helped);
+        stage += 1;
+    };
+    let solver_name = opt.solver_name();
     if stopped_by_time {
         warnings.push(format!("stopped at the {} s time limit before converging", s.time_limit));
     }
-    let last = *opt.history.last().ok_or("no iteration ran")?;
+    let mut last = *opt.history.last().ok_or("no iteration ran")?;
+    if !groups.is_empty() {
+        let ok = joints::joined(problem, &opt.x_phys, study.mesh.iso, &groups, n_main);
+        if !helped.is_empty() && helped.iter().all(|&k| ok[k]) {
+            warnings.push(format!(
+                "{} of {} supports had no material at first; optimized again with each of them made to hold the load, so all are joined",
+                helped.len(),
+                groups.len()
+            ));
+        }
+        for grp in groups.iter().zip(&ok).filter(|(_, j)| !**j).map(|(g, _)| g) {
+            let why = if !grp.holds_alone(problem) {
+                " (it holds fewer than three directions, so it cannot be made to carry the load alone)"
+            } else if stopped_by_time {
+                " (the time limit ended the optimization first)"
+            } else {
+                ""
+            };
+            warnings.push(format!("the support at {} is not joined to the part{why}", joints::place(grp)));
+        }
+    } else if !s.connect_supports {
+        let groups = joints::support_groups(problem);
+        if groups.len() >= 2 {
+            let ok = joints::joined(problem, &opt.x_phys, study.mesh.iso, &groups, n_main);
+            let left = ok.iter().filter(|&&j| !j).count();
+            if left > 0 {
+                warnings.push(format!("{left} of {} supports are not joined to the part; turn on \"Join every support to the part\" (Settings) to join them", groups.len()));
+            }
+        }
+    }
+    // The helper cases have done their part: the compliance and the check are for the real loads.
+    let trim_problem = current.clone();
+    if !helped.is_empty() {
+        opt.keep_cases(n_main);
+        last.compliance = opt.evaluate_energies()?.0;
+    }
     let inside: Vec<bool> = problem.kinds.iter().map(|k| *k != ElementKind::Void).collect();
     let pads: Vec<bool> = problem.kinds.iter().map(|k| *k == ElementKind::Solid).collect();
     let n_inside = inside.iter().filter(|&&i| i).count();
@@ -252,7 +315,8 @@ pub fn solve(job: &Job, hooks: &mut dyn Hooks) -> Result<Outcome, String> {
         let max_loss = study.mesh.trim_percent / 100.0;
         let trim = trim::TrimSettings { max_loss, piece_loss: max_loss / 2.0, ..Default::default() };
         let x: Vec<f64> = density.values.iter().map(|&v| v as f64).collect();
-        let (out, rep) = trim::trim_dead_ends_with(problem, &settings, &x, study.mesh.iso, &trim, factory.as_ref())?;
+        // With the helper cases: a strut joining a support is never dead weight.
+        let (out, rep) = trim::trim_dead_ends_with(&trim_problem, &settings, &x, study.mesh.iso, &trim, factory.as_ref())?;
         trim::apply(&mut density, &out);
         trimmed = rep.removed_fraction;
         if rep.removed_pieces > 0 {
@@ -491,6 +555,15 @@ pub fn make_mesh(study: &Study, density: &Density, surface: Surface) -> Result<(
             report.mesh = mesh.validate(opts.check_self_intersections);
         }
         report.graft = g;
+        // As at the end of the mesher: no triangle left turned over by the stitching.
+        if let Some((m, changes)) = topopt_mesh::graft::untangle(&mesh, 1e-9 * h) {
+            let r = m.validate(opts.check_self_intersections);
+            if r.ok() {
+                report.untangled += changes;
+                report.mesh = r;
+                mesh = m;
+            }
+        }
     }
     Ok((mesh, report))
 }

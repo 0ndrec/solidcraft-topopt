@@ -166,7 +166,7 @@ pub fn build(study: &Study, grid: Grid, design: &Voxels, keep_out: &[bool]) -> R
         }
     }
     cases.sort_by_key(|(n, _)| *n);
-    problem.load_cases = cases.into_iter().map(|(_, forces)| LoadCase { weight: 1.0, forces }).collect();
+    problem.load_cases = cases.into_iter().map(|(_, forces)| LoadCase { weight: 1.0, forces, supports: None, relative: false }).collect();
     problem.kinds = (0..grid.nel())
         .map(|e| {
             if !inside[e] {

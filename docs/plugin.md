@@ -1,6 +1,6 @@
 # The TopOpt plugin for SolidCraft — user guide
 
-The TopOpt plugin (v0.11.0, SolidCraft 0.49.1 and 0.50) does **topology optimization** in your model. You say where material may go, where the part is held and where it is pushed; the plugin finds the stiffest shape from the share of material you allow and inserts it into the model as a body.
+The TopOpt plugin (v0.12.0, SolidCraft 0.49.1 and 0.50) does **topology optimization** in your model. You say where material may go, where the part is held and where it is pushed; the plugin finds the stiffest shape from the share of material you allow and inserts it into the model as a body.
 
 ![The TopOpt panel and ribbon in SolidCraft, with the FPV frame study (examples/fpv-frame)](images/solidcraft-panel.png)
 
@@ -45,6 +45,8 @@ Pick the body material may occupy (a blank, or the part's envelope). The dialog:
 ### 2. Supports — **Add support…**
 
 Pick the faces of the design body that are bolted, clamped or resting on something. Untick **Hold in X/Y/Z** to let a face slide along that axis. Add as many supports as you need.
+
+Every support ends up joined to the part (Settings: **Join every support to the part**, on by default). Left to itself, the optimizer leads the load into the nearest supports and may leave a far bolt hole without any material. When that happens, the study runs again with each such support made to hold the load alone in a helper load case, which takes longer; the warnings say so.
 
 ### 3. Loads — **Add load…**
 
@@ -95,7 +97,7 @@ With "Keep the body's faces exact" and "Keep its sharp edges sharp" (both on by 
 |---|---|
 | **Setup** | Design body, Add support, Add load, Keep surface; the item table; Delete, Clear all |
 | **Run** | Optimize, Create body, Re-mesh, Refresh; study status (where it runs, time estimate); the result |
-| **Settings** | Keep %, element size, element budget, thinnest member, max iterations (default 150), time limit (480 s) |
+| **Settings** | Keep %, element size, element budget, thinnest member, join every support to the part (on), max iterations (default 150), time limit (480 s) |
 | **Material** | Preset (aluminium 6061 and 7075, structural steel, stainless 316, Ti-6Al-4V, PLA, PETG, ABS, PA12, Custom); E, ν, density |
 | **Mesh** | Triangles (up to 50 000), smoothing passes (20), smoother: three switches of which one is on (Bilateral, the default: keeps creases and gives the most accurate surface; Taubin, the fastest; HC, which keeps the volume), finer surface (2 = round members, 1 = faster), keep the body's faces exact, keep its sharp edges sharp, round the joints to supports and loads, remove floating pieces, fill closed cavities, Create body makes a solid |
 | **Advanced** | Use TopOpt Solver when it is running; pad thickness under supports and loads; SIMP penalty; final sharpness β; move limit; surface density threshold; keep the volume while smoothing; fillet radius (0 = 1.5 elements); trim dead weight costing up to a given % of stiffness (0 = off) |
@@ -120,6 +122,7 @@ The solver also solves studies without SolidCraft, from the command line and scr
 ## Tips
 
 - Start with a budget of 20–40 thousand elements and Keep 25–35 %; run the final study finer.
+- What each setting costs and gives, measured on one bracket: [settings-guide.md](settings-guide.md).
 - Give the thinnest part of the body at least 8 elements (otherwise you get a warning and a slow run).
 - Put supports and loads on **faces of the design body**, not of neighbouring parts.
 - A solid layer always stays under supports and loads (its thickness is on the Advanced tab): these are the mounting surfaces.
@@ -143,4 +146,6 @@ The solver also solves studies without SolidCraft, from the command line and scr
 | Optimize stops running out of fuel | The study is too big for the sandbox: start TopOpt Solver or lower the budget |
 | "Runs on: SolidCraft, 1 core (TopOpt Solver not running)" while the solver runs | Different folders: the solver's folder and the plugin's `results` folder must be the same |
 | An empty or broken result | Check that supports and loads are on the same body and Keep is not too small |
-| Create body makes no solid | Read the warnings on the Run tab; untick "Create body makes a solid" to get at least the mesh body |
+| Create body makes no solid | Read the warnings on the Run tab. "sew: unsupported edge contact": Re-mesh with the HC smoother or 40 smoothing passes and Create body again (see [settings-guide.md](settings-guide.md)); or untick "Create body makes a solid" to get at least the mesh body |
+| "N of M supports had no material at first; optimized again…" | Normal: the optimizer led the load into the nearest supports only, so the study ran again with each of the others made to hold the load, and every support is joined. It takes longer. |
+| "the support at (x, y, z) mm is not joined to the part" | The time limit ended the run first (raise it), the support holds fewer than three directions, or "Join every support to the part" (Settings) is off |

@@ -149,6 +149,7 @@ basic = node({"form": {"bind": "/settings", "fields": [
     field("element_size", "Element size (0 = from budget)", "length"),
     field("max_elements", "Element budget", "number"),
     field("min_member", "Thinnest member (0 = auto)", "length"),
+    field("connect_supports", "Join every support to the part", "toggle"),
     field("max_iterations", "Max iterations", "number"),
     field("time_limit", "Time limit, s", "number")]}})
 material = node({"form": {"bind": "/material", "fields": [
@@ -189,7 +190,7 @@ nodes[root] = {"widget": {"group": [next_row, tabs]}}
 manifest = {
     "id": "topopt",
     "name": "TopOpt",
-    "version": "0.11.0",
+    "version": "0.12.0",
     "description": "Topology optimization: pick a design body, supports and loads; get a lightweight, stiff part as a mesh or solid.",
     "capabilities": ["commands@0.2", "ui@0.1", "storage@0.1", "forms@0.1"],
     "runtime": {

@@ -167,6 +167,7 @@ pub fn show(study: &Study, body: Option<&BodyInfo>, solver: &SolverView) -> Resu
         d.push(number(format!("/settings/{k}"), v));
     }
     d.push(flag("/settings/use_solver".into(), st.use_solver));
+    d.push(flag("/settings/connect_supports".into(), st.connect_supports));
     let m = &study.material;
     d.push(text("/material/label".into(), m.label()));
     d.push(number("/material/e".into(), m.e));

@@ -7,6 +7,7 @@ TopOpt finds the stiffest part that fits a design domain, its supports and loads
 | You want to… | Read |
 |---|---|
 | Optimize a part in SolidCraft | [plugin.md](plugin.md): the plugin's user guide |
+| Pick the settings for a study | [settings-guide.md](settings-guide.md): what each study and mesh setting changes, measured on one bracket |
 | Put optimization into a pipeline (scripts, CI, batches, your own software) | [topopt-solver.md](topopt-solver.md): CLI, spec format, outputs, progress, exit codes, Rust API, examples |
 | Solve on an NVIDIA GPU | [topopt-cuda.md](topopt-cuda.md): TopOpt CUDA Solver and the topopt-cuda crate |
 | Understand the algorithm or use the core directly | [topopt-core.md](topopt-core.md) |

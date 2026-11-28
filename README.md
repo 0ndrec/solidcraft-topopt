@@ -47,6 +47,11 @@ A 3-inch FPV drone frame printed in PETG, from a solid blank: held at the flight
 
 The whole study, with where the loads come from and how the result was checked: [examples/fpv-frame](examples/fpv-frame/README.md).
 
+## Install
+
+- **The plugin:** from the [SolidCraft Workshop](https://workshop.solidcraft.io/plugins) (search for TopOpt), or download `topopt-<version>.zip` from [Releases](https://github.com/0ndrec/solidcraft-topopt/releases) and install it from Preferences › Plugins (then restart SolidCraft). [User guide](docs/plugin.md).
+- **TopOpt Solver and TopOpt CUDA Solver** (Windows x64): `topopt-solvers-<version>-windows-x64.zip` from the same release. Unzip it and run `start-topopt-solver.cmd`, or `start-topopt-cuda-solver.cmd` with an NVIDIA GPU, on the folder granted to the plugin as `results`.
+
 ## Quick start
 
 Requirements: Rust stable with the `x86_64-pc-windows-gnu` toolchain (or your platform's) and the `wasm32-unknown-unknown` target; Python 3 for the generators; SolidCraft 0.49.1 for the plugin.
@@ -75,6 +80,7 @@ More specs: [`examples/`](examples).
 |---|---|
 | [Overview](docs/README.md) | Components and how they fit |
 | [Plugin user guide](docs/plugin.md) | Installing and using the plugin in SolidCraft |
+| [Choosing the settings](docs/settings-guide.md) | What each study and mesh setting changes, measured on one bracket |
 | [TopOpt Solver](docs/topopt-solver.md) | CLI, spec format, outputs, progress, exit codes, Rust API, pipeline examples |
 | [TopOpt CUDA Solver](docs/topopt-cuda.md) | The solver on an NVIDIA GPU: use, how it works, accuracy, performance, kernels |
 | [topopt-core](docs/topopt-core.md) | The optimizer and the multigrid solver |

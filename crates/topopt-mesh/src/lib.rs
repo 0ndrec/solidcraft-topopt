@@ -130,6 +130,9 @@ pub struct Report {
     /// Kept faces replaced by the original surface's own triangles ([`graft_kept_faces`]; not run
     /// by [`extract`] itself).
     pub graft: GraftReport,
+    /// Triangles that lay turned over inside the surface, mended by edge flips and collapses
+    /// ([`graft::untangle`]): changes made.
+    pub untangled: usize,
 }
 
 /// How a vertex is held during smoothing (ordered: a higher kind wins in decimation).
@@ -487,6 +490,13 @@ fn extract_once(
         }
     }
     mesh.compact();
+    // A sliver turned over flat inside the surface is no crossing, but a CAD kernel cannot sew it.
+    if let Some((m, changes)) = graft::untangle(&mesh, 1e-9 * h) {
+        if m.validate(opts.check_self_intersections).ok() {
+            report.untangled = changes;
+            mesh = m;
+        }
+    }
     report.mesh = mesh.validate(opts.check_self_intersections);
     if !report.mesh.ok() {
         return Err(format!("the mesh failed validation: {:?}", report.mesh));

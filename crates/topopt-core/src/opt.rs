@@ -121,9 +121,15 @@ pub struct Optimizer {
     pub settings: Settings,
     ke: Ke,
     forces: Vec<Vec<f64>>,
+    /// The weight of each case in the objective; relative cases ([`LoadCase::relative`]) get
+    /// theirs at the first evaluation.
     weights: Vec<f64>,
+    /// Relative weights still to be set.
+    unscaled: bool,
     filter: DensityFilter,
-    solver: Box<dyn LinearSolver>,
+    /// One solver per distinct set of supports; `case_solver[c]` solves load case `c`.
+    solvers: Vec<Box<dyn LinearSolver>>,
+    case_solver: Vec<usize>,
     design: Vec<bool>,
     n_design: usize,
     /// Design variables.
@@ -154,14 +160,33 @@ impl Optimizer {
         let grid = problem.grid;
         let mut ke = hex8_ke(problem.material.nu, grid.h);
         ke.iter_mut().for_each(|v| *v *= problem.material.e);
-        let fixed = problem.fixed_dofs();
-        let forces = problem.force_vectors(&fixed);
         let weights = problem.load_cases.iter().map(|c| c.weight).collect();
+        let unscaled = problem.load_cases.iter().any(|c| c.relative);
         let filter = DensityFilter::new(grid, settings.rmin);
-        let solver: Box<dyn LinearSolver> = match factory {
-            Some(make) => make(&grid, &fixed, &settings.mg)?,
-            None => Box::new(CpuSolver::new(grid, fixed, settings.mg)),
-        };
+        // The problem's supports get the first solver; a case with supports of its own gets
+        // another (each has its own multigrid hierarchy).
+        let mut sets: Vec<Vec<bool>> = vec![problem.fixed_dofs()];
+        let mut forces = Vec::with_capacity(problem.load_cases.len());
+        let mut case_solver = Vec::with_capacity(problem.load_cases.len());
+        for c in 0..problem.load_cases.len() {
+            let fixed = problem.case_fixed_dofs(c);
+            forces.push(problem.force_vector(c, &fixed));
+            let k = match sets.iter().position(|s| *s == fixed) {
+                Some(k) => k,
+                None => {
+                    sets.push(fixed);
+                    sets.len() - 1
+                }
+            };
+            case_solver.push(k);
+        }
+        let mut solvers: Vec<Box<dyn LinearSolver>> = Vec::with_capacity(sets.len());
+        for fixed in sets {
+            solvers.push(match factory {
+                Some(make) => make(&grid, &fixed, &settings.mg)?,
+                None => Box::new(CpuSolver::new(grid, fixed, settings.mg)),
+            });
+        }
         let design: Vec<bool> = (0..grid.nel()).map(|e| problem.kind(e) == ElementKind::Design).collect();
         let n_design = design.iter().filter(|&&d| d).count();
         let x: Vec<f64> = (0..grid.nel())
@@ -177,8 +202,10 @@ impl Optimizer {
             ke,
             forces,
             weights,
+            unscaled,
             filter,
-            solver,
+            solvers,
+            case_solver,
             design,
             n_design,
             x,
@@ -197,17 +224,52 @@ impl Optimizer {
 
     /// Levels of the multigrid hierarchy (finest first).
     pub fn mg_levels(&self) -> Vec<crate::Grid> {
-        self.solver.levels()
+        self.solvers[0].levels()
     }
 
     /// What solves the linear systems ([`LinearSolver::name`]).
     pub fn solver_name(&self) -> String {
-        self.solver.name()
+        self.solvers[0].name()
     }
 
     /// What the user should know about the linear solver ([`LinearSolver::note`]).
     pub fn solver_note(&self) -> Option<String> {
-        self.solver.note()
+        self.solvers[0].note()
+    }
+
+    /// Linear solvers in use: one per distinct set of supports among the load cases.
+    pub fn solver_count(&self) -> usize {
+        self.solvers.len()
+    }
+
+    /// Turns the weights of relative cases into absolute ones, from the compliances just solved
+    /// (the first evaluation: the starting design).
+    fn scale_relative(&mut self) {
+        if !self.unscaled {
+            return;
+        }
+        self.unscaled = false;
+        let cases = &self.problem.load_cases;
+        let c: Vec<f64> = (0..self.forces.len()).map(|k| dot(&self.forces[k], &self.u[k])).collect();
+        let others: f64 = (0..c.len()).filter(|&k| !cases[k].relative).map(|k| self.weights[k] * c[k]).sum();
+        for k in 0..c.len() {
+            if cases[k].relative {
+                self.weights[k] = if c[k] > 0.0 && others > 0.0 { cases[k].weight * others / c[k] } else { cases[k].weight };
+            }
+        }
+    }
+
+    /// Drops every load case after the first `n`, and the solvers only they used: to analyse the
+    /// design under the real loads after helper cases have shaped it.
+    pub fn keep_cases(&mut self, n: usize) {
+        let n = n.min(self.forces.len());
+        self.forces.truncate(n);
+        self.weights.truncate(n);
+        self.u.truncate(n);
+        self.case_solver.truncate(n);
+        self.problem.load_cases.truncate(n);
+        let used = self.case_solver.iter().copied().max().map_or(1, |m| m + 1);
+        self.solvers.truncate(used);
     }
 
     fn physical_of(&self, x: &[f64], filtered: &mut [f64], phys: &mut [f64]) {
@@ -261,11 +323,13 @@ impl Optimizer {
     /// Solves every load case for the current physical densities; returns per-case stats.
     pub fn solve(&mut self) -> Result<Vec<PcgStats>, String> {
         let emod = self.moduli(&self.x_phys);
-        self.solver.update(&self.ke, &emod)?;
+        for solver in &mut self.solvers {
+            solver.update(&self.ke, &emod)?;
+        }
         let mut stats = Vec::new();
         for c in 0..self.forces.len() {
             let (tol, max_iter) = (self.settings.pcg_tol, self.settings.pcg_max_iter);
-            stats.push(self.solver.solve(&self.ke, &emod, &self.forces[c], &mut self.u[c], tol, max_iter)?);
+            stats.push(self.solvers[self.case_solver[c]].solve(&self.ke, &emod, &self.forces[c], &mut self.u[c], tol, max_iter)?);
         }
         Ok(stats)
     }
@@ -276,6 +340,7 @@ impl Optimizer {
     pub fn evaluate_energies(&mut self) -> Result<(f64, Vec<f64>), String> {
         let nel = self.problem.grid.nel();
         self.solve()?;
+        self.scale_relative();
         let emod = self.moduli(&self.x_phys);
         let grid = self.problem.grid;
         let mut compliance = 0.0;
@@ -315,6 +380,7 @@ impl Optimizer {
     pub fn evaluate(&mut self) -> Result<Evaluation, String> {
         let nel = self.problem.grid.nel();
         let stats = self.solve()?;
+        self.scale_relative();
         let grid = self.problem.grid;
         let p = self.settings.penal;
         let emin = self.settings.emin;

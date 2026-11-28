@@ -420,7 +420,7 @@ fn assemble(spec: &Spec, grid: Grid, inside: &[bool], e: f64, nu: f64, warnings:
         }
     }
     cases.sort_by_key(|(c, _)| *c);
-    problem.load_cases = cases.into_iter().map(|(_, forces)| LoadCase { weight: 1.0, forces }).collect();
+    problem.load_cases = cases.into_iter().map(|(_, forces)| LoadCase { weight: 1.0, forces, supports: None, relative: false }).collect();
     for (i, r) in spec.keep_in.iter().enumerate() {
         let before = pads.iter().filter(|&&p| p).count();
         for el in 0..grid.nel() {

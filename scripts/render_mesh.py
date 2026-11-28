@@ -3,10 +3,10 @@ A small software rasterizer (numpy, z-buffer, smooth shading, 2× supersampling)
 plotting library needed.
 
     tools/reference/.venv/Scripts/python scripts/render_mesh.py MESH OUT.png [--size W H]
-        [--yaw DEG] [--pitch DEG] [--color RRGGBB] [--up z|y] [--compare MESH2]
+        [--yaw DEG] [--pitch DEG] [--color RRGGBB] [--up z|y] [--compare MESH2]...
 
-With --compare, MESH2 is rendered with the same camera and framing and put to the right of MESH
-(a before/after picture).
+With --compare (repeatable), each further mesh is rendered with the same camera and framing and
+put to the right of MESH (a before/after picture, or a row of variants).
 """
 import argparse
 import struct
@@ -134,7 +134,7 @@ def main():
     ap.add_argument("--pitch", type=float, default=28)
     ap.add_argument("--color", default="8fc1ea")
     ap.add_argument("--up", choices=["z", "y"], default="z")
-    ap.add_argument("--compare", help="a second mesh, rendered alike to the right")
+    ap.add_argument("--compare", action="append", default=[], help="another mesh, rendered alike to the right (repeat for more)")
     a = ap.parse_args()
 
     def load(path):
@@ -146,12 +146,15 @@ def main():
 
     mesh = load(a.mesh)
     if a.compare:
-        other = load(a.compare)
-        frame = np.vstack([mesh.vertices, other.vertices])
-        left = render(mesh, a.size[0], a.size[1], a.yaw, a.pitch, a.color, frame)
-        right = render(other, a.size[0], a.size[1], a.yaw, a.pitch, a.color, frame)
+        meshes = [mesh] + [load(c) for c in a.compare]
+        frame = np.vstack([m.vertices for m in meshes])
         gap = np.zeros((a.size[1], a.size[0] // 20, 4), dtype=np.uint8)
-        write_png(a.out, np.concatenate([left, gap, right], axis=1))
+        tiles = []
+        for m in meshes:
+            if tiles:
+                tiles.append(gap)
+            tiles.append(render(m, a.size[0], a.size[1], a.yaw, a.pitch, a.color, frame))
+        write_png(a.out, np.concatenate(tiles, axis=1))
     else:
         write_png(a.out, render(mesh, a.size[0], a.size[1], a.yaw, a.pitch, a.color))
     print(a.out, len(mesh.faces), "triangles")

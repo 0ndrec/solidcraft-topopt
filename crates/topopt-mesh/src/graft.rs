@@ -126,6 +126,21 @@ impl Original {
 /// Replaces the result's triangles on the kept triangles of the original surface (`keep`: one flag
 /// per triangle of `surface`) by those triangles. `h`: the sample spacing the result was made at.
 /// Never fails: a patch that cannot be grafted is left as it was, and the report says why.
+/// Turns back the triangles of `mesh` that lie turned over ([`crate::mesh::inverted_triangles`]),
+/// by edge flips or, where no flip fits, edge collapses that turn nothing else over. `None` when
+/// there are none, or when they could not all be mended (then the mesh is best left as it was).
+pub fn untangle(mesh: &Mesh, tiny: f64) -> Option<(Mesh, usize)> {
+    if crate::mesh::inverted_triangles(mesh).is_empty() {
+        return None;
+    }
+    let mut s = Stitch { positions: mesh.positions.clone(), triangles: mesh.triangles.clone(), patch: vec![false; mesh.triangles.len()], half: HashMap::new() };
+    s.index();
+    let changes = s.mend(tiny);
+    let mut out = Mesh { positions: s.positions, triangles: s.triangles };
+    out.compact();
+    (changes > 0 && crate::mesh::inverted_triangles(&out).is_empty()).then_some((out, changes))
+}
+
 pub fn graft_kept_faces(mesh: &Mesh, surface: (&[[f64; 3]], &[[u32; 3]]), keep: &[bool], h: f64, check_self_intersections: bool) -> (Mesh, GraftReport) {
     let mut report = GraftReport::default();
     if keep.len() != surface.1.len() || !keep.iter().any(|&k| k) {
@@ -525,6 +540,7 @@ impl Stitch {
             let tmp = Mesh { positions: self.positions.clone(), triangles: self.triangles.clone() };
             let mut bad: Vec<u32> = crate::mesh::folded_triangles(&tmp);
             bad.extend(crate::mesh::degenerate_triangles(&tmp));
+            bad.extend(crate::mesh::inverted_triangles(&tmp));
             if bad.is_empty() {
                 break;
             }
@@ -1433,5 +1449,30 @@ mod tests {
         let pts: Vec<[f64; 3]> = (0..40).map(|i| [i as f64 * 0.3, 15.0 + if i % 2 == 0 { 0.05 } else { 0.0 }, (i as f64 * 0.7).sin() * 5.0]).collect();
         let n = least_spread(&pts).unwrap();
         assert!(n[1].abs() > 0.999, "{n:?}");
+    }
+
+    #[test]
+    fn untangle_turns_back_a_sliver_lying_over() {
+        // A unit box whose top is split at `e`, which lies a little across the diagonal a–c: the
+        // sliver (a, e, c) faces down, lying over its three neighbours.
+        let positions = vec![
+            [0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 1.0, 0.0], [0.0, 1.0, 0.0], // A B C D
+            [0.0, 0.0, 1.0], [1.0, 0.0, 1.0], [1.0, 1.0, 1.0], [0.0, 1.0, 1.0], // a b c d
+            [0.48, 0.52, 1.0],                                                  // e
+        ];
+        let (aa, bb, cc, dd, a, b, c, d, e) = (0, 1, 2, 3, 4, 5, 6, 7, 8);
+        let triangles = vec![
+            [a, b, e], [b, c, e], [a, e, c], [a, c, d],
+            [aa, cc, bb], [aa, dd, cc],
+            [aa, bb, b], [aa, b, a], [bb, cc, c], [bb, c, b], [cc, dd, d], [cc, d, c], [dd, aa, a], [dd, a, d],
+        ];
+        let m = Mesh { positions, triangles };
+        assert_eq!(crate::mesh::inverted_triangles(&m), vec![2]);
+        let (fixed, changes) = untangle(&m, 1e-9).expect("mended");
+        assert!(changes > 0);
+        assert!(crate::mesh::inverted_triangles(&fixed).is_empty());
+        let r = fixed.validate(true);
+        assert!(r.ok(), "{r:?}");
+        assert!((r.volume - 1.0).abs() < 1e-9, "{}", r.volume);
     }
 }
