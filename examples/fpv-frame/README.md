@@ -2,7 +2,7 @@
 
 A printed frame for a small FPV drone, made lighter with the TopOpt plugin in SolidCraft. We start from a solid blank, say where the frame is held and what pushes on it in flight, and let the optimizer keep 30 % of the material where it carries the most. The result is **69 % lighter** (38.2 g → 11.8 g), and still well within what PETG can take.
 
-![The solid blank (left) and the optimized frame (right)](../../docs/images/fpv-before-after.png)
+![TopOpt: an FPV frame optimized from 38.2 g to 11.8 g, with its loads, deflection, stress and run](../../docs/images/cover.png)
 
 ## 1. The blank
 
@@ -15,8 +15,6 @@ A printed frame for a small FPV drone, made lighter with the TopOpt plugin in So
 | Motor seats | 22 mm discs, 1.5 mm proud of the arms; M2 holes on a 12 × 12 mm square (1404-size motors) and a 5.5 mm shaft relief |
 | Flight stack | M2 holes on a 20 × 20 mm square |
 | Volume, mass | 30 081 mm³; 38.2 g in PETG (1.27 g/cm³) |
-
-![The blank](../../docs/images/fpv-blank.png)
 
 ## 2. The loads
 
@@ -48,8 +46,6 @@ The motor seats and the stack holes get solid pads 1.5 elements deep; the rest i
 
 ## 4. The result
 
-![The optimized frame](../../docs/images/fpv-result.png)
-
 The arms became open trusses: two flanges along the arm's edges, which carry the bending from the thrust, and X braces between them, which carry the side hits. The core opened up around the stack, where the battery and the electronics hold the frame anyway. The motor seats stayed solid discs with their holes.
 
 | | Blank | Optimized |
@@ -63,8 +59,6 @@ The arms became open trusses: two flanges along the arm's edges, which carry the
 | Safety factor against 20 MPa (99 % / peak) | | **6.3 / 4.0** |
 
 The frame is 3.2 times lighter and 3 times more flexible: stiffness per gram is about what the blank had, and the 1.27 mm the motors move at full throttle is on a 60 mm arm. The stress stays below 5 MPa everywhere, a quarter of what we allowed.
-
-<p align="center"><img src="../../docs/images/fpv-result-top.png" alt="The optimized frame from above" width="60%"></p>
 
 The **Run** tab of the panel shows them after the run:
 

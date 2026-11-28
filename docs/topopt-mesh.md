@@ -4,9 +4,6 @@
 
 The crate knows nothing about optimization: it needs only the field, so it can surface any scalar field (an SDF, another optimizer's result, a CT scan).
 
-![Before and after sharp-edge pinning: the clamp block of a cantilever](images/sharp-edges.png)
-
-*The same densities meshed without (left) and with (right) sharp-edge pinning: the clamp block's edges and corners are exact on the right.*
 
 ## The pipeline: `extract`
 
@@ -54,9 +51,7 @@ Tested on a 3-inch FPV frame with 0.41 mm samples, its result re-meshed with sev
 
 ## Finer fields: `upsample_cells`
 
-`upsample_cells(dims, cells, k)` resamples a cell field `k` times finer along each axis (cell-centred) by separable cubic (Catmull-Rom) interpolation, clamped to 0…1; `upsample_mask` does the same for per-cell flags (each fine cell takes its coarse cell's flag). Contouring the finer field gives round members where the coarse one gives faceted ones: between two samples the surface follows a cubic instead of a straight line. ![Struts of a bridge meshed from the projected densities (left) and from the filtered densities sampled ×2 with bilateral smoothing (right)](images/smooth-struts.png)
-
-*A bridge's struts meshed from the projected densities with Taubin smoothing (left, the previous default) and from the filtered densities sampled ×2 with bilateral smoothing (right, the default now).*
+`upsample_cells(dims, cells, k)` resamples a cell field `k` times finer along each axis (cell-centred) by separable cubic (Catmull-Rom) interpolation, clamped to 0…1; `upsample_mask` does the same for per-cell flags (each fine cell takes its coarse cell's flag). Contouring the finer field gives round members where the coarse one gives faceted ones: between two samples the surface follows a cubic instead of a straight line.
 
 `topopt-study` meshes the optimizer's *filtered* densities upsampled ×2 by default ([topopt-study.md](topopt-study.md)); on a bridge, strut cross-sections fit an ellipse to 0.984 instead of 0.956 and the mean angle between neighbouring triangles fell from 15.7° to 10.4° at the same triangle count.
 

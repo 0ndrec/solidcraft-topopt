@@ -30,31 +30,7 @@ The price, on the baseline:
 - **Time:** 645 s instead of 146 s.
 - **Stiffness:** the compliance is 36 % higher (164 against 120) than that of the part held by only four holes. With the same material, the plate joining the far holes comes out of the main load path.
 
-<p align="center">
-  <img src="images/bracket-joined.png" alt="Left: four of seven bolt holes used, three rings floating; right: all seven joined by a base plate" width="80%">
-</p>
-
-*Without joining (left): four holes used, three rings floating. With it (right): all seven in one part.*
-
 ## Study settings
-
-<p align="center">
-  <img src="images/bracket-volume.png" alt="Keep 20, 30 and 45 percent" width="98%">
-</p>
-
-*Keep 20 %, 30 % (baseline) and 45 %.*
-
-<p align="center">
-  <img src="images/bracket-resolution.png" alt="Element budget 40 000, 100 000 and 250 000" width="98%">
-</p>
-
-*Element budget 40 000, 100 000 (baseline) and 250 000.*
-
-<p align="center">
-  <img src="images/bracket-pad-member.png" alt="Baseline, pad 0.6 mm, thinnest member 3 mm" width="98%">
-</p>
-
-*Baseline, pad 0.6 mm, and thinnest member 3 mm.*
 
 Each row changes one setting from the baseline. The times include the second run that joins the holes.
 
@@ -91,18 +67,6 @@ All rows are made by **Re-mesh** from the baseline result, so the part is the sa
 - Finer surface 2;
 - sharp edges kept, joints rounded, volume kept;
 - 30 000 triangles.
-
-<p align="center">
-  <img src="images/bracket-surface.png" alt="Finer surface 1, 2 and 3" width="98%">
-</p>
-
-*Finer surface 1, 2 (default) and 3.*
-
-<p align="center">
-  <img src="images/bracket-triangles.png" alt="10 000, 30 000 and 50 000 triangles" width="98%">
-</p>
-
-*10 000, 30 000 (default) and 50 000 triangles.*
 
 | Changed | Time | Triangles | Volume | Surface bend, mean / p95 | Worst triangle | Bore (kept) | Solid in SolidCraft |
 |---|---|---|---|---|---|---|---|

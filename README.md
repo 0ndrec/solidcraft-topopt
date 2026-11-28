@@ -8,8 +8,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/cantilever.png" alt="An optimized cantilever" width="49%">
-  <img src="docs/images/bridge.png" alt="An optimized bridge" width="49%">
+  <img src="docs/images/cover.png" alt="TopOpt: an FPV frame optimized from 38.2 g to 11.8 g, with its loads, deflection, stress and run" width="98%">
 </p>
 
 ## What it does
@@ -19,11 +18,6 @@ Give it a design domain, where the part is held, where it is loaded and how much
 - **In SolidCraft:** pick a body, its supports and loads; press Optimize; get a new body. A panel guides you step by step.
 - **In a pipeline:** describe a study in JSON (a box, an STL or an inline mesh; supports and loads as boxes, spheres and planes) and run `topopt-solver solve`, or `topopt-cuda-solver solve` to use an NVIDIA GPU. You get PLY/STL, the density field and a JSON summary, with JSON-lines progress and meaningful exit codes.
 - **In your Rust code:** `topopt_solver::run()` in memory, with progress callbacks and cancellation; or the core, mesher and study crates on their own.
-
-<p align="center">
-  <img src="docs/images/smooth-struts.png" alt="Struts before and after: meshed from the voxels, and from the smooth filtered field sampled twice as finely" width="98%">
-  <br><i>Before and after: struts meshed from the voxel densities (left) and from the smooth filtered field, sampled ×2 (right).</i>
-</p>
 
 ![The TopOpt panel and ribbon in SolidCraft, with the FPV frame study](docs/images/solidcraft-panel.png)
 
@@ -40,10 +34,6 @@ Give it a design domain, where the part is held, where it is loaded and how much
 ## Example: a lighter FPV frame
 
 A 3-inch FPV drone frame printed in PETG, from a solid blank: held at the flight stack, pushed by full-throttle thrust on the motor seats (4 × 4.12 N) and by side hits on each arm (10 N). TopOpt CUDA Solver kept 30 % of the material in 18 minutes on an entry-level GPU. The frame went from **38.2 g to 11.8 g**; at full throttle its motors move 1.27 mm and the stress stays under 5 MPa, a safety factor of 4 against PETG printed across layers. The motor seats, kept surfaces, are the CAD model's own faces.
-
-<p align="center">
-  <img src="docs/images/fpv-before-after.png" alt="An FPV frame blank and the optimized frame" width="98%">
-</p>
 
 The whole study, with where the loads come from and how the result was checked: [examples/fpv-frame](examples/fpv-frame/README.md).
 
@@ -106,10 +96,6 @@ scripts/                builds, generators, headless SolidCraft tests, mesh rend
 wit/                    SolidCraft's plugin WIT (craft:plugin@0.2.0)
 xtask/                  componentize the plugin without wasm-tools
 ```
-
-<p align="center">
-  <img src="docs/images/fpv-result.png" alt="A 3-inch FPV frame optimized in SolidCraft" width="60%">
-</p>
 
 ## License
 

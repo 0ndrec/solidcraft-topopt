@@ -158,6 +158,6 @@ Driving the app from an agent over MCP:
 
 ## Versions
 
-- Plugin: the manifest version (0.12.1).
+- Plugin: the manifest version (0.12.2).
 - Crates and solver: the workspace `version` (0.1.0); the solver reports it in its heartbeat, `version` and the `started` event.
 - Plugin ↔ solver protocol: `PROTOCOL = 1`; job format: `JOB_VERSION = 1`.

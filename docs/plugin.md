@@ -1,6 +1,6 @@
 # The TopOpt plugin for SolidCraft — user guide
 
-The TopOpt plugin (v0.12.1, SolidCraft 0.49.1 and 0.50) does **topology optimization** in your model. You say where material may go, where the part is held and where it is pushed; the plugin finds the stiffest shape from the share of material you allow and inserts it into the model as a body.
+The TopOpt plugin (v0.12.2, SolidCraft 0.49.1 and 0.50) does **topology optimization** in your model. You say where material may go, where the part is held and where it is pushed; the plugin finds the stiffest shape from the share of material you allow and inserts it into the model as a body.
 
 ![The TopOpt panel and ribbon in SolidCraft, with the FPV frame study (examples/fpv-frame)](images/solidcraft-panel.png)
 
@@ -92,6 +92,8 @@ The surface is made from the optimizer's smooth (filtered) densities, sampled tw
 With "Keep the body's faces exact" and "Keep its sharp edges sharp" (both on by default), the result's mounting faces lie on the design body's faces and its edges and corners on the body's edges and corners. If the sharp edges cannot be kept without the surface crossing itself, they are rounded and the Run tab says so in its warnings.
 
 ## Panel tabs
+
+Each tab starts with a short note on what it is for, and each setting's label gives its unit, what more or less of it does and, where it helps, its default. The dialogs' fields explain how to choose them.
 
 | Tab | Content |
 |---|---|

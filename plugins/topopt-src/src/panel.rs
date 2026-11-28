@@ -199,22 +199,22 @@ pub fn show(study: &Study, body: Option<&BodyInfo>, solver: &SolverView) -> Resu
             rows.push(("Mass", format!("{:.1} g", r.mass_g)));
             if r.max_displacement_mm > 0.0 {
                 rows.push(("Max deflection", format!("{:.3} mm", r.max_displacement_mm)));
-                rows.push(("Stress (von Mises)", format!("99 % below {:.1} MPa, peak {:.1} MPa", r.stress_p99_mpa, r.stress_max_mpa)));
+                rows.push(("Stress (von Mises)", format!("99 % of the material below {:.1} MPa, peak {:.1} MPa", r.stress_p99_mpa, r.stress_max_mpa)));
                 if r.cases.len() > 1 {
                     for c in &r.cases {
                         rows.push(("Load case", format!("{}: {:.3} mm, {:.1} MPa (99 %)", c.case, c.max_displacement_mm, c.stress_p99_mpa)));
                     }
                 }
             }
-            rows.push(("Volume", format!("{:.1} %, {} mm³", r.volume_fraction * 100.0, fmt_n(r.mesh_volume_mm3.round()))));
-            rows.push(("Compliance", format!("{:.4} N·mm", r.compliance)));
+            rows.push(("Volume", format!("{:.1} % of the body, {} mm³", r.volume_fraction * 100.0, fmt_n(r.mesh_volume_mm3.round()))));
+            rows.push(("Compliance", format!("{:.4} N·mm (lower = stiffer)", r.compliance)));
             rows.push(("Run", format!("{}, {} it., {}", r.outcome, r.iterations, topopt_study::status::fmt_duration(r.seconds))));
             if !r.solver.is_empty() {
                 rows.push(("Solved on", r.solver.clone()));
             }
-            rows.push(("Cells", format!("{} of {:.2} mm", fmt_n(r.elements as f64), r.h)));
+            rows.push(("Elements", format!("{} of {:.2} mm", fmt_n(r.elements as f64), r.h)));
             rows.push(("Mesh", format!("{} triangles", fmt_n(r.triangles as f64))));
-            rows.push(("Holes through", r.genus.to_string()));
+            rows.push(("Through-holes", r.genus.to_string()));
             if r.trimmed > 0.0 {
                 rows.push(("Trimmed", format!("{:.1} % of the material", r.trimmed * 100.0)));
             }
